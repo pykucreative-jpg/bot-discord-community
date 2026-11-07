@@ -14,6 +14,8 @@ const read = ['ViewChannel', 'ReadMessageHistory', 'UseApplicationCommands'];
 const write = ['SendMessages', 'EmbedLinks'];
 const noWrite = [...write, 'CreatePublicThreads', 'CreatePrivateThreads', 'SendMessagesInThreads'];
 const voice = ['Connect', 'Speak'];
+const statsBlocked = ['Connect', 'SendMessages'];
+const statsMask = new PermissionsBitField(statsBlocked).bitfield;
 const moderators = ['admin', 'mod'];
 const communityStaff = [...moderators, 'helper', 'organizer'];
 const layoutVersion = 3;
@@ -173,23 +175,56 @@ function legacyChannelLabels(channel) {
   return emoji ? [`${emoji}・${channel.name}`, `${emoji}│${channel.name}`] : [];
 }
 
+export function isStatsChannel(state, id) {
+  return id === state.categories['live-stats'] ||
+    channelEntries.some(({ channel }) => channel.counter && state.channels[channel.name] === id);
+}
+
+function statsLocked(channel) {
+  const overwrites = channel?.permissionOverwrites?.cache;
+  return overwrites?.get(channel.guild.id)?.deny.has(statsMask, false) &&
+    !overwrites.some(({ allow }) => (allow.bitfield & statsMask) !== 0n);
+}
+
+export async function lockStatsChannel(channel) {
+  if (statsLocked(channel)) return;
+  const everyone = channel.guild.id;
+  const entries = [...channel.permissionOverwrites.cache.values()];
+  if (!entries.some(({ id }) => id === everyone)) {
+    entries.push({ id: everyone, type: OverwriteType.Role, allow: new PermissionsBitField(), deny: new PermissionsBitField() });
+  }
+  await channel.edit({
+    permissionOverwrites: entries.map(({ id, type, allow, deny }) => ({
+      id, type, allow: allow.bitfield & ~statsMask,
+      deny: id === everyone ? deny.bitfield | statsMask : deny.bitfield,
+    })),
+    reason: 'Ustawienie liczników jako kanałów do podglądu',
+  });
+}
+
 async function positionStats(guild, state) {
   const definition = categories.find(({ key }) => key === 'live-stats');
   const channels = await guild.channels.fetch();
   const category = channels.get(state.categories[definition.key]);
+  await lockStatsChannel(category);
   if (category.position !== 0) await category.setPosition(0, { reason });
   for (const [index, item] of definition.channels.entries()) {
     const channel = channels.get(state.channels[item.name]);
+    await lockStatsChannel(channel);
     if (channel.position !== index) await channel.setPosition(index, { reason });
   }
   const updated = await guild.channels.fetch();
   const top = updated.get(category.id)?.position === 0;
+  const locked = statsLocked(updated.get(category.id)) &&
+    definition.channels.every(({ name }) => statsLocked(updated.get(state.channels[name])));
   const ordered = definition.channels.every(({ name }, index) => {
     const channel = updated.get(state.channels[name]);
     return channel?.parentId === category.id && channel.position === index;
   });
   if (!top || !ordered) throw new SetupError('Discord nie zapisał kolejności kategorii STATYSTYKI i liczników.');
   console.log('STATYSTYKI są na górze. Kolejność liczników: Online, Offline, Osoby.');
+  if (!locked) throw new SetupError('Discord nie zapisał blokady dołączania do liczników.');
+  console.log('Liczniki STATYSTYKI tylko do podglądu: zablokowano połączenie i pisanie.');
 }
 
 function overwrites(guild, state, access) {
@@ -217,8 +252,8 @@ function overwrites(guild, state, access) {
   const editors = access === 'events' ? [...moderators, 'organizer'] : moderators;
   return [
     readOnly ? { ...hide, deny: [...hide.deny, ...noWrite] }
-      : access === 'stats' ? { ...hide, deny: [...hide.deny, 'Connect', 'SendMessages'] } : hide,
-    botAccess,
+      : access === 'stats' ? { ...hide, deny: [...hide.deny, ...statsBlocked] } : hide,
+    access === 'stats' ? allow(bot, read, OverwriteType.Member) : botAccess,
     allow(state.roles.verified, permissions),
     ...communityStaff.map((key) => allow(state.roles[key], readOnly && editors.includes(key)
       ? [...permissions, ...write] : permissions)),
@@ -312,6 +347,14 @@ export async function applySetup(guild, journal, plan) {
     await save();
   }
   await positionStats(guild, state);
+  const bot = await guild.members.fetchMe();
+  const messageChannels = await Promise.all(['witamy', 'pozegnania'].map((name) =>
+    guild.channels.fetch(state.channels[name], { force: true })));
+  if (messageChannels.every((channel) => channel?.permissionsFor(bot)?.has(['ViewChannel', 'SendMessages', 'EmbedLinks']))) {
+    console.log('Automatyczne powitania i pożegnania gotowe w kanałach witamy i pozegnania.');
+  } else {
+    console.warn('Sprawdź uprawnienia bota do pisania i osadzania kart w kanałach witamy i pozegnania.');
+  }
   const adultChannel = await guild.channels.fetch(state.channels.nsfw, { force: true });
   if (!adultChannel?.nsfw) {
     await adultChannel.edit({ nsfw: true, reason: 'Przywrócenie ograniczenia wiekowego w strefie 18+' });

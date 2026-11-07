@@ -4,7 +4,7 @@ import {
 } from 'discord.js';
 import { channelLabel } from './plan.mjs';
 import { reviewButtons } from './panels.mjs';
-import { channelEntries, privateModerationChannel, SetupError } from './setup.mjs';
+import { channelEntries, isStatsChannel, lockStatsChannel, privateModerationChannel, SetupError } from './setup.mjs';
 
 const DAY = 86_400_000;
 const NO_MENTIONS = { parse: [] };
@@ -340,8 +340,9 @@ export function createSecurity({ client, guildId, getState, logError }) {
       if (joins.length >= 6) raidUntil = now + 10 * 60_000;
       if (alert) await log(guild, '🚨 Wykryto falę dołączeń',
         'Co najmniej 6 osób dołączyło w 20 sekund. Nowe weryfikacje trafiają do ręcznej oceny.', 0xE85D75);
-      await post(guild, 'witamy', card('👋 Dobrze, że jesteś!',
-        `Witamy <@${user.id}>! Rozgość się i zajrzyj do <#${getState().channels['start-tutaj']}>. Miło Cię widzieć w naszej społeczności.`, 0x2CA58D));
+      const welcome = await post(guild, 'witamy', card('👋 Witaj w Centrum Graczy!',
+        `Hej <@${user.id}>! Fajnie, że do nas dołączasz. Na początek zajrzyj do <#${getState().channels['start-tutaj']}> i zaakceptuj regulamin w <#${getState().channels.weryfikacja}>. Do zobaczenia w grze! 🎮`, 0x2CA58D));
+      if (welcome) console.log('Wysłano automatyczne powitanie w kanale witamy.');
     }
     await log(guild, '📥 Dołączenie', `${label(user)}\nKonto utworzone <t:${Math.floor(user.createdTimestamp / 1000)}:R>.`);
   });
@@ -349,8 +350,9 @@ export function createSecurity({ client, guildId, getState, logError }) {
     if (!active(member.guild)) return;
     rates.delete(member.id);
     if (!member.user.bot) {
-      await post(member.guild, 'pozegnania', card('🌙 Do zobaczenia!',
-        `**${detail(member.user.username)}** opuszcza społeczność. Dzięki za wspólnie spędzony czas!`, 0x7767AF));
+      const farewell = await post(member.guild, 'pozegnania', card('🌙 Do zobaczenia!',
+        `**${detail(member.user.username)}** opuścił(a) Centrum Graczy. Dzięki za wspólny czas i powodzenia w kolejnych rozgrywkach! 🎮`, 0x7767AF));
+      if (farewell) console.log('Wysłano automatyczne pożegnanie w kanale pozegnania.');
     }
     await log(member.guild, '📤 Opuszczenie serwera', label(member.user));
   });
@@ -372,8 +374,12 @@ export function createSecurity({ client, guildId, getState, logError }) {
   });
 
   on(Events.ChannelUpdate, async (_before, channel) => {
-    if (!active(channel.guild) || channel.id !== getState().channels.nsfw ||
-        channel.type !== ChannelType.GuildText || channel.nsfw) return;
+    if (!active(channel.guild)) return;
+    if (isStatsChannel(getState(), channel.id)) {
+      await lockStatsChannel(channel);
+      return;
+    }
+    if (channel.id !== getState().channels.nsfw || channel.type !== ChannelType.GuildText || channel.nsfw) return;
     await channel.edit({ nsfw: true, reason: 'Przywrócenie ograniczenia wiekowego w strefie 18+' });
     await log(channel.guild, '🔞 Przywrócono ograniczenie wiekowe', `Kanał: <#${channel.id}>`, 0xE85D75);
   });
