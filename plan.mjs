@@ -7,7 +7,7 @@ export const roles = [
   { key: 'verified', name: 'Zweryfikowany', color: 0x2CA58D },
   { key: 'woman', name: 'Kobieta', group: 'plec', emoji: '♀️' },
   { key: 'man', name: 'Mężczyzna', group: 'plec', emoji: '♂️' },
-  { key: 'nonbinary', name: 'Osoba niebinarna', group: 'plec', emoji: '⚧️' },
+  { key: 'nonbinary', name: 'Osoba niebinarna', group: 'plec' },
   { key: 'age13', name: '13–17 lat', group: 'wiek' },
   { key: 'age18', name: '18–24 lata', group: 'wiek' },
   { key: 'age25', name: '25–34 lata', group: 'wiek' },
