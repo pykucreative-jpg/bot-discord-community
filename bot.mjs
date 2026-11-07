@@ -337,9 +337,10 @@ function loginFailure(error) {
 function validateControl(interaction, action) {
   const state = journal.state;
   if (action === 'ticket-close' && state.securityReady && interaction.message?.author?.id === interaction.client.user.id) return;
-  const legacyReview = ['approve-queue', 'hold-queue'].includes(action) && interaction.channelId === state.channels['mod-log'];
+  const queueReview = ['approve-queue', 'hold-queue'].includes(action);
   const publicPanel = ['report', 'send-report'].includes(action);
-  const key = publicPanel ? 'start-tutaj' : legacyReview ? 'mod-log' : 'logi-bota';
+  const key = publicPanel ? 'start-tutaj'
+    : queueReview ? (interaction.channelId === state.channels['mod-log'] ? 'mod-log' : 'logi-bota') : 'panel-moderacji';
   const mainPanel = publicPanel || ['status', 'announce', 'publish', 'moderate',
     'unban', 'lift-ban', 'clear-channel', 'clear'].includes(action);
   if (!state.securityReady || interaction.channelId !== state.channels[key] ||
@@ -506,7 +507,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   security.syncPresence(guild).then(() => security.refreshStats(guild)).catch(logError);
   try {
     console.log(await runSetup(guild));
-    console.log('Panele znajdziesz na kanale startowym i w logi-bota. Modzi służy do rozmów ekipy.');
+    console.log(`Panel moderatorów jest w osobnym kanale <#${journal.state.channels['panel-moderacji']}>.`);
   } catch (error) {
     logError(error);
     startupSummary = error instanceof SetupError ? error.message

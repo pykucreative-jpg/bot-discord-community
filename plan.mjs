@@ -86,7 +86,9 @@ export const categories = [
     channels: [
       { name: 'mod-log', label: 'modzi', emoji: '🛡️', legacyEmoji: '📋', layout: 5,
         topic: 'Prywatny czat moderatorów.' },
-      { name: 'logi-bota', emoji: '📋', topic: 'Logi, alerty i panel moderatorów.', access: 'logs' },
+      { name: 'panel-moderacji', emoji: '🛠️', topic: 'Panel i narzędzia moderacji.', access: 'logs' },
+      { name: 'logi-bota', label: 'logi-bota', emoji: '📋', layout: 4,
+        topic: 'Logi, alerty i zgłoszenia do oceny.', access: 'logs' },
     ],
   },
   {
@@ -134,10 +136,9 @@ export const starterMessages = {
     'Role widać na profilu serwerowym. Podawaj tylko informacje, którymi chcesz się dzielić.',
     'W ostatnim menu wybierz wszystkie zainteresowania, które chcesz zachować, albo wybierz samo **Bez roli**.',
   ].join('\n'),
-  'logi-bota': () => [
+  'panel-moderacji': () => [
     '🛡️ Panel moderatorów',
-    'Tutaj trafiają powiadomienia o ticketach i konta do oceny.',
-    'Przyciski pod zgłoszeniem pozwalają zatwierdzić lub wstrzymać dostęp. Z menu poniżej wybierzesz osobę do moderacji.',
+    'Z menu poniżej wybierzesz osobę lub kanał do moderacji.',
   ].join('\n\n'),
 };
 

@@ -428,13 +428,13 @@ export async function applySetup(guild, journal, plan) {
     const [title, ...lines] = render((key) => `<#${state.channels[key]}>`).split('\n');
     const description = lines.join('\n');
     const colors = { 'start-tutaj': 0x5865F2, regulamin: 0x2CA58D, 'wybierz-role': 0xA76DEC,
-      'logi-bota': 0x5865F2 };
+      'panel-moderacji': 0x5865F2 };
     const embed = new EmbedBuilder()
       .setTitle(title).setDescription(description).setColor(colors[name])
       .setFooter({ text: 'CENTRUM SPOŁECZNOŚCI' });
     const components = name === 'wybierz-role' ? makeRolePanel() : [];
     if (name === 'start-tutaj') components.push(communityButtons());
-    if (name === 'logi-bota') components.push(...staffButtons());
+    if (name === 'panel-moderacji') components.push(...staffButtons());
     if (name === 'regulamin') {
       components.push(new ActionRowBuilder().addComponents(new ButtonBuilder()
         .setCustomId(verificationButton).setLabel('Akceptuję regulamin').setStyle(ButtonStyle.Success)));
@@ -460,20 +460,27 @@ export async function applySetup(guild, journal, plan) {
     await pinStaffPanel(name, posted);
     if (!previous) messages++;
   }
-  if (state.messages['mod-log'] && !state.retiredStaffPanel) {
-    const oldChannel = currentChannels.get(state.channels['mod-log']);
+  state.staffPanelRedirects ??= {};
+  for (const name of ['mod-log', 'logi-bota']) {
+    if (!state.messages[name] || state.staffPanelRedirects[name]) continue;
+    const oldChannel = currentChannels.get(state.channels[name]);
     try {
-      const oldPanel = await oldChannel?.messages.fetch({ message: state.messages['mod-log'], force: true });
+      const oldPanel = await oldChannel?.messages.fetch({ message: state.messages[name], force: true });
       if (oldPanel?.author.id === guild.client.user.id) {
         await oldPanel.edit({
-          content: `Panel moderatorów jest teraz w <#${state.channels['logi-bota']}>.`,
+          content: `Panel moderatorów jest teraz w <#${state.channels['panel-moderacji']}>.`,
           embeds: [], components: [], allowedMentions: { parse: [] },
         });
+        if (oldPanel.pinned && oldPanel.pinnable) {
+          await oldPanel.unpin('Przeniesienie panelu moderatorów').catch((error) => {
+            console.error('Nie udało się odpiąć starego panelu moderatorów:', error.code ?? error.name);
+          });
+        }
       }
     } catch (error) {
       if (error.code !== RESTJSONErrorCodes.UnknownMessage && error.code !== RESTJSONErrorCodes.UnknownChannel) throw error;
     }
-    state.retiredStaffPanel = true;
+    state.staffPanelRedirects[name] = true;
     await save();
   }
   const oldVerificationId = state.channels.weryfikacja;
@@ -493,7 +500,7 @@ export async function applySetup(guild, journal, plan) {
 }
 
 async function pinStaffPanel(name, message) {
-  if (name === 'logi-bota' && message.pinnable && !message.pinned) {
+  if (name === 'panel-moderacji' && message.pinnable && !message.pinned) {
     await message.pin('Przypięcie panelu moderatorów').catch((error) => {
       console.error('Nie udało się przypiąć panelu moderatorów:', error.code ?? error.name);
     });
