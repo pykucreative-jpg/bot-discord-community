@@ -207,12 +207,19 @@ export async function lockStatsChannel(channel) {
 export async function lockReadOnlyChannel(channel, state) {
   const item = channelEntries.find(({ channel: definition }) => state.channels[definition.name] === channel.id);
   const access = item?.channel.access ?? item?.category.access;
+  const guild = channel.guild;
+  if (access === 'mods') {
+    const permissionOverwrites = overwrites(guild, state, 'mods');
+    if (!matchesOverwrites(channel.permissionOverwrites.cache, permissionOverwrites)) {
+      await channel.edit({ permissionOverwrites, reason: 'Prywatny dostęp do kanału tylko dla moderacji' });
+    }
+    return;
+  }
   if (!['lobby', 'read', 'events'].includes(access)) return;
 
-  const guild = channel.guild;
   const cache = channel.permissionOverwrites.cache;
   const editors = new Map([[guild.client.user.id, OverwriteType.Member]]);
-  for (const key of access === 'events' ? [...moderators, 'organizer'] : moderators) {
+  for (const key of moderators) {
     if (state.roles[key]) editors.set(state.roles[key], OverwriteType.Role);
   }
   const ids = new Set([...cache.keys(), guild.id, ...editors.keys()]);
@@ -228,6 +235,13 @@ export async function lockReadOnlyChannel(channel, state) {
     return { id, type: existing?.type ?? editors.get(id) ?? OverwriteType.Role, allow: nextAllow, deny: nextDeny };
   });
   if (changed) await channel.edit({ permissionOverwrites, reason: 'Pisanie tylko dla ekipy w kanałach informacyjnych' });
+}
+
+function matchesOverwrites(actual, expected) {
+  return actual?.size === expected.length && expected.every((entry) => {
+    const saved = actual.get(entry.id);
+    return saved?.type === entry.type && saved.allow.equals(entry.allow) && saved.deny.equals(entry.deny);
+  });
 }
 
 async function positionStats(guild, state) {
@@ -263,7 +277,7 @@ function overwrites(guild, state, access) {
   const botAccess = allow(bot, [...read, ...write], OverwriteType.Member);
   if (access === 'mods') {
     return [
-      hide,
+      { ...hide, deny: [...hide.deny, ...noWrite] },
       botAccess,
       ...moderators.map((key) => allow(state.roles[key], [...read, ...write])),
     ];
@@ -277,13 +291,12 @@ function overwrites(guild, state, access) {
   }
   const readOnly = access === 'read' || access === 'events';
   const permissions = [...read, ...(readOnly || access === 'stats' ? [] : write), ...(access === 'voice' ? voice : [])];
-  const editors = access === 'events' ? [...moderators, 'organizer'] : moderators;
   return [
     readOnly ? { ...hide, deny: [...hide.deny, ...noWrite] }
       : access === 'stats' ? { ...hide, deny: [...hide.deny, ...statsBlocked] } : hide,
     access === 'stats' ? allow(bot, read, OverwriteType.Member) : botAccess,
     allow(state.roles.verified, permissions),
-    ...communityStaff.map((key) => allow(state.roles[key], readOnly && editors.includes(key)
+    ...communityStaff.map((key) => allow(state.roles[key], readOnly && moderators.includes(key)
       ? [...permissions, ...write] : permissions)),
   ];
 }
@@ -377,11 +390,11 @@ export async function applySetup(guild, journal, plan) {
   await positionStats(guild, state);
   const currentChannels = await guild.channels.fetch();
   for (const { category, channel } of channelEntries) {
-    if (['lobby', 'read', 'events'].includes(channel.access ?? category.access)) {
+    if (['lobby', 'read', 'events', 'mods'].includes(channel.access ?? category.access)) {
       await lockReadOnlyChannel(currentChannels.get(state.channels[channel.name]), state);
     }
   }
-  console.log('Kanały informacyjne do odczytu dla członków. Pisanie dostępne dla odpowiednich rang ekipy.');
+  console.log('Kanały informacyjne do odczytu dla członków. Pisanie dla Moderatorów i Administratorów. Kanał modzi jest prywatny.');
   const bot = await guild.members.fetchMe();
   const messageChannels = await Promise.all(['witamy', 'pozegnania'].map((name) =>
     guild.channels.fetch(state.channels[name], { force: true })));
@@ -480,10 +493,7 @@ export async function privateModerationChannel(guild, state, force = true) {
   const expected = overwrites(guild, state, 'mods');
   const actual = channel?.permissionOverwrites?.cache;
   if (channel?.type !== ChannelType.GuildText || channel.parentId !== state.categories.moderation ||
-      actual?.size !== expected.length || !expected.every((entry) => {
-        const saved = actual.get(entry.id);
-        return saved?.type === entry.type && saved.allow.equals(entry.allow) && saved.deny.equals(entry.deny);
-      })) {
+      !matchesOverwrites(actual, expected)) {
     throw new SetupError('Prywatny kanał modów wymaga sprawdzenia uprawnień przez administrację.');
   }
   return channel;
