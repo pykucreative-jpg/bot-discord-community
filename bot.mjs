@@ -112,16 +112,18 @@ async function runSetup(guild, notify = async () => {}) {
       const role = await guild.roles.fetch(cleanupRoleId, { force: true }).catch(logError);
       if (role && role.id !== guild.id) {
         const name = process.env.DISCORD_CLEANUP_ROLE_NAME?.trim();
-        if (name && name !== role.name) {
+        const labelKey = (label) => label.normalize('NFKC').replace(/[^\p{L}\p{N}]/gu, '').toLocaleLowerCase('pl');
+        let activeName = role.name;
+        if (name && labelKey(name) !== labelKey(activeName)) {
           try {
             const renamed = await role.setName(name, 'Nazwa roli wyznaczonej do sprzątania starych kanałów');
-            console.log(`Nazwa roli sprzątania: ${renamed.name} (${renamed.id}).`);
+            activeName = renamed.name;
           } catch (error) {
             logError(error);
             console.warn('Nie udało się zmienić nazwy roli sprzątania. Sprawdź jej pozycję względem roli bota.');
           }
         }
-        console.log(`Rola sprzątania starych kanałów aktywna: ${role.id}.`);
+        console.log(`Rola sprzątania starych kanałów aktywna: ${role.id} (${activeName.replace(/[\r\n]/g, ' ').trim()}).`);
       } else {
         console.warn(`Nie znaleziono roli do sprzątania starych kanałów: ${cleanupRoleId}.`);
       }
