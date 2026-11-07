@@ -13,12 +13,12 @@ export const cleanupCommand = new SlashCommandBuilder()
     .addStringOption((option) => option.setName('kod').setDescription('Kod z podglądu, ważny przez 5 minut.').setRequired(true)));
 
 export function createCleanup() {
-  let confirmation;
+  const confirmations = new Map();
   const order = (items) => items.sort((a, b) => Number(a.type === ChannelType.GuildCategory) -
     Number(b.type === ChannelType.GuildCategory) || a.id.localeCompare(b.id));
   const fingerprint = ({ id, name, parentId, type }) => JSON.stringify([id, name, parentId, type]);
 
-  return async function cleanup(guild, state, { action, code, channelId, panel = false }) {
+  return async function cleanup(guild, state, { action, code, channelId, requesterId, panel = false, fromStart = false }) {
     if (!state.securityReady) throw new SetupError('Poczekaj, aż bot zakończy budowę nowej struktury.');
     const { newRoles, newCategories, newChannels, migration } = await inspect(guild, state);
     if (newRoles.length || newCategories.length || newChannels.length || migration.length) {
@@ -30,11 +30,15 @@ export function createCleanup() {
     ]);
     const channels = await guild.channels.fetch();
     const obsolete = order([...channels.values()].filter((channel) => !kept.has(channel.id)));
+    const now = Date.now();
+    for (const [id, pending] of confirmations) {
+      if (now >= pending.expires) confirmations.delete(id);
+    }
     if (action === 'podglad') {
-      confirmation = undefined;
+      confirmations.delete(requesterId);
       if (!obsolete.length) return 'Nie ma starych kanałów ani kategorii do usunięcia.';
       const previewCode = randomInt(100_000, 1_000_000).toString();
-      confirmation = { code: previewCode, list: obsolete.map(fingerprint), expires: Date.now() + 5 * 60_000 };
+      confirmations.set(requesterId, { code: previewCode, list: obsolete.map(fingerprint), expires: now + 5 * 60_000 });
       const list = obsolete.map((channel) => {
         const parent = channels.get(channel.parentId);
         return `${parent ? parent.name + ' / ' : ''}${channel.name} [${channel.id}]`;
@@ -44,18 +48,18 @@ export function createCleanup() {
           ? 'Po sprawdzeniu listy możesz użyć przycisku. Potwierdzenie jest ważne 5 minut.'
           : `Po sprawdzeniu listy użyj **/serwer-porzadki usun** z kodem **${previewCode}**. Kod jest ważny 5 minut.`}`,
         files: [new AttachmentBuilder(Buffer.from(list, 'utf8'), { name: 'kanaly-do-usuniecia.txt' })],
-        ...(panel ? { components: [confirmCleanup(previewCode)] } : {}),
+        ...(panel ? { components: [confirmCleanup(previewCode, fromStart)] } : {}),
       };
     }
 
     if (!kept.has(channelId)) {
       throw new SetupError('Potwierdź usuwanie w jednym z nowych kanałów.');
     }
-    if (!confirmation || code !== confirmation.code || Date.now() >= confirmation.expires) {
+    const snapshot = confirmations.get(requesterId);
+    if (!snapshot || code !== snapshot.code) {
       throw new SetupError('Kod jest nieprawidłowy lub wygasł. Wygeneruj nowy podgląd.');
     }
-    const snapshot = confirmation;
-    confirmation = undefined;
+    confirmations.delete(requesterId);
     if (obsolete.length !== snapshot.list.length || obsolete.some((channel, i) => fingerprint(channel) !== snapshot.list[i])) {
       throw new SetupError('Lista kanałów zmieniła się od podglądu. Wygeneruj nowy podgląd.');
     }
@@ -80,7 +84,7 @@ export function createCleanup() {
             throw new SetupError('W kategorii pojawił się kanał.');
           }
         }
-        await channel.delete('Porządki po budowie serwera potwierdzone przez właściciela');
+        await channel.delete(`Porządki po budowie serwera potwierdzone przez użytkownika ${requesterId}`);
         removed++;
       } catch (error) {
         throw new SetupError(`Usunięto ${removed} z ${obsolete.length} elementów. Operacja zatrzymała się na „${channel.name}”. Sprawdź ustawienia kanału i wygeneruj nowy podgląd.`, { cause: error });

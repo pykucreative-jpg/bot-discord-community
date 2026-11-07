@@ -30,6 +30,11 @@ export const channelEntries = categories.flatMap((category) =>
 
 export class SetupError extends Error {}
 
+export function configuredCleanupRole() {
+  const id = process.env.DISCORD_CLEANUP_ROLE_ID?.trim() ?? '';
+  return /^\d{17,20}$/.test(id) ? id : undefined;
+}
+
 const volumePath = process.env.RAILWAY_VOLUME_MOUNT_PATH;
 const dataFolder = volumePath ? pathToFileURL(resolve(volumePath) + sep) : new URL('./data/', import.meta.url);
 
@@ -292,7 +297,9 @@ export async function applySetup(guild, journal, plan) {
   let messages = 0;
   for (const [name, render] of Object.entries(starterMessages)) {
     const isPanel = name !== 'regulamin';
-    const needsUpdate = state.messageLayout[name] !== messageVersion;
+    const cleanupEnabled = Boolean(configuredCleanupRole());
+    const version = name === 'start-tutaj' ? `${messageVersion}:${cleanupEnabled}` : messageVersion;
+    const needsUpdate = state.messageLayout[name] !== version;
     if (state.messages[name] && !isPanel && !needsUpdate) continue;
     const channel = await guild.channels.fetch(state.channels[name], { force: true });
     let saved;
@@ -315,7 +322,7 @@ export async function applySetup(guild, journal, plan) {
       .setTitle(title).setDescription(description).setColor(colors[name])
       .setFooter({ text: 'CENTRUM SPOŁECZNOŚCI' });
     const components = name === 'wybierz-role' ? makeRolePanel() : [];
-    if (name === 'start-tutaj') components.push(communityButtons());
+    if (name === 'start-tutaj') components.push(communityButtons(cleanupEnabled));
     if (name === 'mod-log') components.push(...staffButtons());
     if (name === 'weryfikacja') {
       components.push(new ActionRowBuilder().addComponents(new ButtonBuilder()
@@ -324,7 +331,7 @@ export async function applySetup(guild, journal, plan) {
     if (saved?.author.id === guild.client.user.id) {
       await saved.edit({ content: '', embeds: [embed], components, allowedMentions: { parse: [] } });
       await pinStaffPanel(name, saved);
-      state.messageLayout[name] = messageVersion;
+      state.messageLayout[name] = version;
       await save();
       continue;
     }
@@ -337,7 +344,7 @@ export async function applySetup(guild, journal, plan) {
       nonce: state.messages[name] ?? channel.id, enforceNonce: true,
     });
     state.messages[name] = posted.id;
-    state.messageLayout[name] = messageVersion;
+    state.messageLayout[name] = version;
     await save();
     await pinStaffPanel(name, posted);
     if (!previous) messages++;

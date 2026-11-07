@@ -8,7 +8,7 @@ import { cleanupCommand, createCleanup } from './cleanup.mjs';
 import { controls, manualRoles, moderationButtons, panelModal, verificationButton } from './panels.mjs';
 import { boostSystemSettings, createSecurity, securityCommands } from './security.mjs';
 import {
-  applySetup, botPermissions, inspect, installProtection, loadState,
+  applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
   privateModerationChannel, SetupError, withSetupLock,
 } from './setup.mjs';
 
@@ -107,6 +107,25 @@ async function runSetup(guild, notify = async () => {}) {
     const plan = await inspect(guild, journal.state);
     await notify();
     const messages = await applySetup(guild, journal, plan);
+    const cleanupRoleId = configuredCleanupRole();
+    if (cleanupRoleId) {
+      const role = await guild.roles.fetch(cleanupRoleId, { force: true }).catch(logError);
+      if (role && role.id !== guild.id) {
+        const name = process.env.DISCORD_CLEANUP_ROLE_NAME?.trim();
+        if (name && name !== role.name) {
+          try {
+            const renamed = await role.setName(name, 'Nazwa roli wyznaczonej do sprzątania starych kanałów');
+            console.log(`Nazwa roli sprzątania: ${renamed.name} (${renamed.id}).`);
+          } catch (error) {
+            logError(error);
+            console.warn('Nie udało się zmienić nazwy roli sprzątania. Sprawdź jej pozycję względem roli bota.');
+          }
+        }
+        console.log(`Rola sprzątania starych kanałów aktywna: ${role.id}.`);
+      } else {
+        console.warn(`Nie znaleziono roli do sprzątania starych kanałów: ${cleanupRoleId}.`);
+      }
+    }
     const protectionStatus = await installProtection(guild, journal.state).catch((error) => {
       logError(error);
       return 'AutoMod wymaga sprawdzenia ustawień i uprawnień w Discordzie.';
@@ -128,12 +147,18 @@ async function runSetup(guild, notify = async () => {}) {
   });
 }
 
-async function ownerCleanup(interaction, action, code, panel = false) {
+async function authorizedCleanup(interaction, action, code, { panel = false, fromStart = false } = {}) {
   const guild = await interaction.guild.fetch();
   if (interaction.user.id !== guild.ownerId) {
-    throw new SetupError('Usuwanie starych kanałów jest dostępne tylko dla właściciela serwera.');
+    const roleId = configuredCleanupRole();
+    const member = roleId && roleId !== guild.id && await guild.members.fetch({ user: interaction.user.id, force: true });
+    if (!member || member.pending || member.isCommunicationDisabled() || !member.roles.cache.has(roleId)) {
+      throw new SetupError('Usuwanie starych kanałów jest dostępne tylko dla właściciela lub osoby z wyznaczoną rolą.');
+    }
   }
-  return withConfiguration(() => cleanup(guild, journal.state, { action, code, panel, channelId: interaction.channelId }));
+  return withConfiguration(() => cleanup(guild, journal.state, {
+    action, code, panel, fromStart, channelId: interaction.channelId, requesterId: interaction.user.id,
+  }));
 }
 
 async function setManagedRole(guild, actorId, targetId, key, action) {
@@ -170,7 +195,7 @@ async function configure(interaction) {
   if (interaction.commandName === 'serwer-plan') return planText(await inspect(guild, (await loadState(guildId)).state));
   if (interaction.commandName === 'serwer-porzadki') {
     const action = interaction.options.getSubcommand();
-    return ownerCleanup(interaction, action, interaction.options.getString('kod')?.trim());
+    return authorizedCleanup(interaction, action, interaction.options.getString('kod')?.trim());
   }
   if (interaction.commandName === 'serwer-rola') {
     const user = interaction.options.getUser('osoba', true);
@@ -325,9 +350,9 @@ function loginFailure(error) {
 
 function validateControl(interaction, action) {
   const state = journal.state;
-  const publicPanel = ['report', 'send-report', 'stats'].includes(action);
+  const publicPanel = ['report', 'send-report', 'stats', 'cleanup-start', 'delete-start'].includes(action);
   const key = publicPanel ? 'start-tutaj' : 'mod-log';
-  const mainPanel = publicPanel || ['status', 'cleanup', 'announce', 'publish', 'moderate',
+  const mainPanel = (publicPanel && action !== 'delete-start') || ['status', 'cleanup', 'announce', 'publish', 'moderate',
     'unban', 'lift-ban', 'clear-channel', 'clear'].includes(action);
   if (!state.securityReady || interaction.channelId !== state.channels[key] ||
       interaction.message?.author?.id !== interaction.client.user.id ||
@@ -337,8 +362,12 @@ function validateControl(interaction, action) {
 }
 
 async function useControl(interaction, action, key, id) {
-  if (action === 'cleanup') return ownerCleanup(interaction, 'podglad', undefined, true);
-  if (action === 'delete' && /^\d{6}$/.test(key)) return ownerCleanup(interaction, 'usun', key, true);
+  if (action === 'cleanup' || action === 'cleanup-start') {
+    return authorizedCleanup(interaction, 'podglad', undefined, { panel: true, fromStart: action === 'cleanup-start' });
+  }
+  if ((action === 'delete' || action === 'delete-start') && /^\d{6}$/.test(key)) {
+    return authorizedCleanup(interaction, 'usun', key, { panel: true, fromStart: action === 'delete-start' });
+  }
   if (action === 'stats') return security.statisticsReply(interaction.guild);
 
   const member = await interaction.guild.members.fetch({ user: interaction.user.id, force: true });

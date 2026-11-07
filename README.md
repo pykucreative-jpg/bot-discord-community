@@ -42,7 +42,9 @@ Rangi ekipy to **Administrator**, **Moderator**, **Pomocnik** i **Organizator**.
        npm.cmd start
 
 5. Poczekaj na komunikat „Gotowe” w terminalu. Bot utworzy strukturę, opublikuje karty i spróbuje włączyć reguły AutoMod. Otwórz 👋│start-tutaj, by zobaczyć panel członkowski, oraz 🛡️│modzi, by zobaczyć panel moderatorów. Bot przypina panel moderatorów, jeśli ma uprawnienie do przypinania wiadomości.
-6. Jeśli zastępujesz wcześniejszy układ, jako właściciel kliknij **Podgląd starych kanałów** w panelu modów. Sprawdź listę w prywatnym załączniku, a następnie kliknij **Trwale usuń kanały z podglądu**. Potwierdzenie wygasa po 5 minutach. Usunięcie kanału usuwa jego historię, wątki i posty na forum. Jeśli lista się zmieni, bot poprosi o nowy podgląd. Jeżeli Discord zatrzyma operację na chronionym kanale, odpowiedź poda liczbę już usuniętych elementów.
+6. Jeśli zastępujesz wcześniejszy układ, jako właściciel kliknij **Podgląd starych kanałów** w panelu modów. Sprawdź listę w prywatnym załączniku, a następnie kliknij **Trwale usuń kanały z podglądu**. Potwierdzenie jest przypisane do osoby, która otworzyła podgląd, i wygasa po 5 minutach. Usunięcie kanału usuwa jego historię, wątki i posty na forum. Jeśli lista się zmieni, bot poprosi o nowy podgląd. Jeżeli Discord zatrzyma operację na chronionym kanale, odpowiedź poda liczbę już usuniętych elementów.
+
+Opcjonalnie ustaw `DISCORD_CLEANUP_ROLE_ID` na identyfikator istniejącej roli uprawnionej do sprzątania. Jej posiadacze mogą użyć **Podgląd starych kanałów** w 👋│start-tutaj. Bot sprawdza rolę przy podglądzie i przy potwierdzeniu. Delegacja obejmuje wyłącznie sprzątanie przez bota. Czyszczenie dotyczy kanałów i kategorii, a role pozostają na serwerze. Opcjonalna zmienna `DISCORD_CLEANUP_ROLE_NAME` zmienia nazwę wskazanej roli, jeśli bot ma uprawnienia do jej edycji.
 
 ## Wdrożenie na Railway
 
