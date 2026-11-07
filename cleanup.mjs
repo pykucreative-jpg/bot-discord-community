@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { AttachmentBuilder, ChannelType, GuildFeature, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
+import { AttachmentBuilder, ChannelType, GuildFeature, SlashCommandBuilder } from 'discord.js';
 import { categories } from './plan.mjs';
 import { confirmCleanup } from './panels.mjs';
 import { channelEntries, inspect, SetupError } from './setup.mjs';
@@ -7,7 +7,6 @@ import { boostSystemSettings } from './security.mjs';
 
 export const cleanupCommand = new SlashCommandBuilder()
   .setName('serwer-porzadki').setDescription('Usuń stare kanały i kategorie po zbudowaniu nowej struktury.')
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addSubcommand((sub) => sub.setName('podglad').setDescription('Pokaż pełną listę elementów do usunięcia.'))
   .addSubcommand((sub) => sub.setName('usun').setDescription('Usuń kanały z ostatniego podglądu.')
     .addStringOption((option) => option.setName('kod').setDescription('Kod z podglądu, ważny przez 5 minut.').setRequired(true)));
@@ -18,7 +17,7 @@ export function createCleanup() {
     Number(b.type === ChannelType.GuildCategory) || a.id.localeCompare(b.id));
   const fingerprint = ({ id, name, parentId, type }) => JSON.stringify([id, name, parentId, type]);
 
-  return async function cleanup(guild, state, { action, code, channelId, requesterId, panel = false, fromStart = false }) {
+  return async function cleanup(guild, state, { action, code, channelId, requesterId, panel = false }) {
     if (!state.securityReady) throw new SetupError('Poczekaj, aż bot zakończy budowę nowej struktury.');
     const { newRoles, newCategories, newChannels, migration } = await inspect(guild, state);
     if (newRoles.length || newCategories.length || newChannels.length || migration.length) {
@@ -48,7 +47,7 @@ export function createCleanup() {
           ? 'Po sprawdzeniu listy możesz użyć przycisku. Potwierdzenie jest ważne 5 minut.'
           : `Po sprawdzeniu listy użyj **/serwer-porzadki usun** z kodem **${previewCode}**. Kod jest ważny 5 minut.`}`,
         files: [new AttachmentBuilder(Buffer.from(list, 'utf8'), { name: 'kanaly-do-usuniecia.txt' })],
-        ...(panel ? { components: [confirmCleanup(previewCode, fromStart)] } : {}),
+        ...(panel ? { components: [confirmCleanup(previewCode)] } : {}),
       };
     }
 

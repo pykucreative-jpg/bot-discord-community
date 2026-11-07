@@ -13,13 +13,15 @@ const reason = 'Konfiguracja serwera społecznościowego';
 const read = ['ViewChannel', 'ReadMessageHistory', 'UseApplicationCommands'];
 const write = ['SendMessages', 'EmbedLinks'];
 const noWrite = [...write, 'CreatePublicThreads', 'CreatePrivateThreads', 'SendMessagesInThreads'];
+const postingMask = new PermissionsBitField(noWrite).bitfield;
+const writeMask = new PermissionsBitField(write).bitfield;
 const voice = ['Connect', 'Speak'];
 const statsBlocked = ['Connect', 'SendMessages'];
 const statsMask = new PermissionsBitField(statsBlocked).bitfield;
 const moderators = ['admin', 'mod'];
 const communityStaff = [...moderators, 'helper', 'organizer'];
 const layoutVersion = 3;
-const messageVersion = 4;
+const messageVersion = 5;
 
 export const botPermissions = new PermissionsBitField([
   ...read, ...noWrite, ...voice, 'ViewAuditLog',
@@ -202,6 +204,32 @@ export async function lockStatsChannel(channel) {
   });
 }
 
+export async function lockReadOnlyChannel(channel, state) {
+  const item = channelEntries.find(({ channel: definition }) => state.channels[definition.name] === channel.id);
+  const access = item?.channel.access ?? item?.category.access;
+  if (!['lobby', 'read', 'events'].includes(access)) return;
+
+  const guild = channel.guild;
+  const cache = channel.permissionOverwrites.cache;
+  const editors = new Map([[guild.client.user.id, OverwriteType.Member]]);
+  for (const key of access === 'events' ? [...moderators, 'organizer'] : moderators) {
+    if (state.roles[key]) editors.set(state.roles[key], OverwriteType.Role);
+  }
+  const ids = new Set([...cache.keys(), guild.id, ...editors.keys()]);
+  let changed = false;
+  const permissionOverwrites = [...ids].map((id) => {
+    const existing = cache.get(id);
+    const allow = existing?.allow.bitfield ?? 0n;
+    const deny = existing?.deny.bitfield ?? 0n;
+    const canPost = editors.has(id);
+    const nextAllow = canPost ? allow | writeMask : allow & ~postingMask;
+    const nextDeny = id === guild.id ? deny | postingMask : canPost ? deny & ~writeMask : deny;
+    if (nextAllow !== allow || nextDeny !== deny) changed = true;
+    return { id, type: existing?.type ?? editors.get(id) ?? OverwriteType.Role, allow: nextAllow, deny: nextDeny };
+  });
+  if (changed) await channel.edit({ permissionOverwrites, reason: 'Pisanie tylko dla ekipy w kanałach informacyjnych' });
+}
+
 async function positionStats(guild, state) {
   const definition = categories.find(({ key }) => key === 'live-stats');
   const channels = await guild.channels.fetch();
@@ -347,6 +375,13 @@ export async function applySetup(guild, journal, plan) {
     await save();
   }
   await positionStats(guild, state);
+  const currentChannels = await guild.channels.fetch();
+  for (const { category, channel } of channelEntries) {
+    if (['lobby', 'read', 'events'].includes(channel.access ?? category.access)) {
+      await lockReadOnlyChannel(currentChannels.get(state.channels[channel.name]), state);
+    }
+  }
+  console.log('Kanały informacyjne do odczytu dla członków. Pisanie dostępne dla odpowiednich rang ekipy.');
   const bot = await guild.members.fetchMe();
   const messageChannels = await Promise.all(['witamy', 'pozegnania'].map((name) =>
     guild.channels.fetch(state.channels[name], { force: true })));
@@ -362,11 +397,8 @@ export async function applySetup(guild, journal, plan) {
 
   let messages = 0;
   for (const [name, render] of Object.entries(starterMessages)) {
-    const isPanel = name !== 'regulamin';
-    const cleanupEnabled = Boolean(configuredCleanupRole());
-    const version = name === 'start-tutaj' ? `${messageVersion}:${cleanupEnabled}` : messageVersion;
+    const version = messageVersion;
     const needsUpdate = state.messageLayout[name] !== version;
-    if (state.messages[name] && !isPanel && !needsUpdate) continue;
     const channel = await guild.channels.fetch(state.channels[name], { force: true });
     let saved;
     if (state.messages[name]) {
@@ -382,15 +414,15 @@ export async function applySetup(guild, journal, plan) {
     }
     const [title, ...lines] = render((key) => `<#${state.channels[key]}>`).split('\n');
     const description = lines.join('\n');
-    const colors = { 'start-tutaj': 0x5865F2, regulamin: 0x2CA58D, 'wybierz-role': 0xA76DEC, weryfikacja: 0xE7A84C,
+    const colors = { 'start-tutaj': 0x5865F2, regulamin: 0x2CA58D, 'wybierz-role': 0xA76DEC,
       'mod-log': 0x5865F2 };
     const embed = new EmbedBuilder()
       .setTitle(title).setDescription(description).setColor(colors[name])
       .setFooter({ text: 'CENTRUM SPOŁECZNOŚCI' });
     const components = name === 'wybierz-role' ? makeRolePanel() : [];
-    if (name === 'start-tutaj') components.push(communityButtons(cleanupEnabled));
+    if (name === 'start-tutaj') components.push(communityButtons());
     if (name === 'mod-log') components.push(...staffButtons());
-    if (name === 'weryfikacja') {
+    if (name === 'regulamin') {
       components.push(new ActionRowBuilder().addComponents(new ButtonBuilder()
         .setCustomId(verificationButton).setLabel('Akceptuję regulamin').setStyle(ButtonStyle.Success)));
     }
@@ -415,8 +447,19 @@ export async function applySetup(guild, journal, plan) {
     await pinStaffPanel(name, posted);
     if (!previous) messages++;
   }
+  const oldVerificationId = state.channels.weryfikacja;
+  if (oldVerificationId && state.layout[oldVerificationId] !== 'retired') {
+    const retired = currentChannels.get(oldVerificationId);
+    if (retired?.type === ChannelType.GuildText) {
+      await retired.edit({ name: '📁│stara-weryfikacja',
+        permissionOverwrites: overwrites(guild, state, 'mods'), reason: 'Połączenie regulaminu i weryfikacji' });
+    }
+    state.layout[oldVerificationId] = 'retired';
+    await save();
+  }
   state.securityReady = true;
   await save();
+  console.log('Regulamin i przycisk akceptacji są w jednym kanale. Na karcie startowej pozostało zgłoszenie.');
   return messages;
 }
 

@@ -107,6 +107,13 @@ async function runSetup(guild, notify = async () => {}) {
     const plan = await inspect(guild, journal.state);
     await notify();
     const messages = await applySetup(guild, journal, plan);
+    const verificationStatus = await security.gateRoles(guild, true).then(() => {
+      console.log('Role weryfikacji są gotowe do nadawania.');
+      return '';
+    }).catch((error) => {
+      logError(error);
+      return '\nWeryfikacja wymaga sprawdzenia hierarchii lub uprawnień ról.';
+    });
     const cleanupRoleId = configuredCleanupRole();
     if (cleanupRoleId) {
       const role = await guild.roles.fetch(cleanupRoleId, { force: true }).catch(logError);
@@ -144,12 +151,12 @@ async function runSetup(guild, notify = async () => {}) {
       }
     }
     security.refreshStats(guild).catch(logError);
-    startupSummary = `Gotowe. Dodano role (${plan.newRoles.length}), kategorie (${plan.newCategories.length}), kanały (${plan.newChannels.length}) i karty (${messages}).\n\n${protectionStatus}${boostStatus}`;
+    startupSummary = `Gotowe. Dodano role (${plan.newRoles.length}), kategorie (${plan.newCategories.length}), kanały (${plan.newChannels.length}) i karty (${messages}).\n\n${protectionStatus}${boostStatus}${verificationStatus}`;
     return startupSummary;
   });
 }
 
-async function authorizedCleanup(interaction, action, code, { panel = false, fromStart = false } = {}) {
+async function authorizedCleanup(interaction, action, code, { panel = false } = {}) {
   const guild = await interaction.guild.fetch();
   if (interaction.user.id !== guild.ownerId) {
     const roleId = configuredCleanupRole();
@@ -159,7 +166,7 @@ async function authorizedCleanup(interaction, action, code, { panel = false, fro
     }
   }
   return withConfiguration(() => cleanup(guild, journal.state, {
-    action, code, panel, fromStart, channelId: interaction.channelId, requesterId: interaction.user.id,
+    action, code, panel, channelId: interaction.channelId, requesterId: interaction.user.id,
   }));
 }
 
@@ -189,16 +196,15 @@ function planText({ newRoles, newCategories, newChannels, migration }) {
 }
 
 async function configure(interaction) {
+  if (interaction.commandName === 'serwer-porzadki') {
+    return authorizedCleanup(interaction, interaction.options.getSubcommand(), interaction.options.getString('kod')?.trim());
+  }
   const guild = await interaction.guild.fetch();
   if (interaction.user.id !== guild.ownerId) {
     throw new SetupError('Tę komendę może wykonać tylko właściciel serwera.');
   }
   if (building) throw new SetupError('Konfiguracja jest już w toku.');
   if (interaction.commandName === 'serwer-plan') return planText(await inspect(guild, (await loadState(guildId)).state));
-  if (interaction.commandName === 'serwer-porzadki') {
-    const action = interaction.options.getSubcommand();
-    return authorizedCleanup(interaction, action, interaction.options.getString('kod')?.trim());
-  }
   if (interaction.commandName === 'serwer-rola') {
     const user = interaction.options.getUser('osoba', true);
     return setManagedRole(guild, interaction.user.id, user.id, interaction.options.getString('ranga', true),
@@ -352,9 +358,9 @@ function loginFailure(error) {
 
 function validateControl(interaction, action) {
   const state = journal.state;
-  const publicPanel = ['report', 'send-report', 'stats', 'cleanup-start', 'delete-start'].includes(action);
+  const publicPanel = ['report', 'send-report'].includes(action);
   const key = publicPanel ? 'start-tutaj' : 'mod-log';
-  const mainPanel = (publicPanel && action !== 'delete-start') || ['status', 'cleanup', 'announce', 'publish', 'moderate',
+  const mainPanel = publicPanel || ['status', 'cleanup', 'announce', 'publish', 'moderate',
     'unban', 'lift-ban', 'clear-channel', 'clear'].includes(action);
   if (!state.securityReady || interaction.channelId !== state.channels[key] ||
       interaction.message?.author?.id !== interaction.client.user.id ||
@@ -364,13 +370,12 @@ function validateControl(interaction, action) {
 }
 
 async function useControl(interaction, action, key, id) {
-  if (action === 'cleanup' || action === 'cleanup-start') {
-    return authorizedCleanup(interaction, 'podglad', undefined, { panel: true, fromStart: action === 'cleanup-start' });
+  if (action === 'cleanup') {
+    return authorizedCleanup(interaction, 'podglad', undefined, { panel: true });
   }
-  if ((action === 'delete' || action === 'delete-start') && /^\d{6}$/.test(key)) {
+  if (action === 'delete' && /^\d{6}$/.test(key)) {
     return authorizedCleanup(interaction, 'usun', key, { panel: true, fromStart: action === 'delete-start' });
   }
-  if (action === 'stats') return security.statisticsReply(interaction.guild);
 
   const member = await interaction.guild.members.fetch({ user: interaction.user.id, force: true });
   if (member.pending || member.isCommunicationDisabled()) {
@@ -509,9 +514,11 @@ client.once(Events.ClientReady, async (readyClient) => {
     process.exitCode = 1;
     return;
   }
-  if (process.env.DISCORD_SLASH_COMMANDS === 'true') {
+  const registeredCommands = process.env.DISCORD_SLASH_COMMANDS === 'true' ? commands
+    : configuredCleanupRole() ? [cleanupCommand] : [];
+  if (registeredCommands.length) {
     const route = Routes.applicationGuildCommands(readyClient.application.id, guild.id);
-    for (const command of commands) {
+    for (const command of registeredCommands) {
       await readyClient.rest.post(route, { body: command.toJSON() }).catch(logError);
     }
   }

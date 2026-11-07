@@ -47,8 +47,8 @@ export const categories = [
     key: 'start', name: '📌 START', access: 'lobby',
     channels: [
       { name: 'start-tutaj', emoji: '👋', topic: 'Pierwsze kroki na serwerze.' },
-      { name: 'regulamin', emoji: '📜', topic: 'Zasady obowiązujące na serwerze.' },
-      { name: 'weryfikacja', emoji: '🛂', topic: 'Przeczytaj regulamin i potwierdź jego akceptację.' },
+      { name: 'regulamin', label: 'regulamin-i-weryfikacja', emoji: '📜', layout: 4,
+        topic: 'Przeczytaj zasady i zaakceptuj je, żeby odblokować serwer.' },
       { name: 'ogloszenia', emoji: '📣', topic: 'Informacje od ekipy serwera.', access: 'read' },
       { name: 'wybierz-role', emoji: '🎭', topic: 'Panel wyboru ról. Płeć i wiek są dobrowolne.', access: 'read' },
     ],
@@ -109,13 +109,12 @@ export const categoryLabel = (category) => {
 export const starterMessages = {
   'start-tutaj': (channel) => [
     '👋 Witaj na serwerze!',
-    `1. Przeczytaj ${channel('regulamin')}.`,
-    `2. Przejdź do ${channel('weryfikacja')} i zaakceptuj zasady, aby odblokować kanały społeczności.`,
-    `3. Po uzyskaniu dostępu wybierz role w ${channel('wybierz-role')} i przywitaj się na ${channel('ogolny')}.`,
-    `Do wspólnego grania znajdziesz ludzi na ${channel('szukam-ekipy')}. Pod tą kartą możesz zgłosić sprawę lub sprawdzić statystyki.`,
+    `1. Przejdź do ${channel('regulamin')}, przeczytaj zasady i kliknij **Akceptuję regulamin**.`,
+    `2. Gdy odblokują się kanały, wybierz role w ${channel('wybierz-role')} i przywitaj się na ${channel('ogolny')}.`,
+    `Do wspólnego grania znajdziesz ludzi na ${channel('szukam-ekipy')}. Pod tą kartą możesz prywatnie zgłosić sprawę.`,
   ].join('\n'),
   regulamin: () => [
-    '📜 Regulamin',
+    '📜 Regulamin i weryfikacja',
     '1. Szanuj innych. Nękanie, groźby i mowa nienawiści są zabronione.',
     '2. Nie spamuj i nie reklamuj bez zgody ekipy.',
     '3. Dbaj o prywatność. Nie publikuj cudzych danych ani prywatnych rozmów bez zgody.',
@@ -123,13 +122,9 @@ export const starterMessages = {
     '5. Przestrzegaj zasad Discorda. Naruszenia zgłaszaj przyciskiem **Zgłoś sprawę** w kanale startowym.',
     '6. Materiały dla dorosłych publikuj wyłącznie w kanale oznaczonym jako 18+ i w granicach zasad Discorda.',
     '7. Unikaj masowych oznaczeń, powtarzania wiadomości i obchodzenia blokad. Wiek i płeć podajesz dobrowolnie.',
-    'Moderacja może usunąć treść i zareagować adekwatnie do sytuacji.',
+    '',
+    'Kliknij **Akceptuję regulamin**, aby dostać rolę **Zweryfikowany** i odblokować kanały. Nowe konta mogą trafić do ręcznej oceny moderatora.',
   ].join('\n'),
-  weryfikacja: (channel) => [
-    '🛂 Odblokuj dostęp do społeczności',
-    `Przeczytaj ${channel('regulamin')} i kliknij **Akceptuję regulamin**. Po przyznaniu roli **Zweryfikowany** zobaczysz kanały społeczności i będziesz móc na nich pisać.`,
-    `Nowe konta i osoby dołączające podczas wykrytego nalotu mogą poczekać na decyzję moderatora. Przycisk zgłoszenia znajdziesz na ${channel('start-tutaj')}.`,
-  ].join('\n\n'),
   'wybierz-role': () => [
     '🎭 Wybierz swoje role',
     'Wybierz płeć, przedział wiekowy lub zainteresowania z menu poniżej.',

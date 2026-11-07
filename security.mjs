@@ -4,7 +4,9 @@ import {
 } from 'discord.js';
 import { channelLabel } from './plan.mjs';
 import { reviewButtons } from './panels.mjs';
-import { channelEntries, isStatsChannel, lockStatsChannel, privateModerationChannel, SetupError } from './setup.mjs';
+import {
+  channelEntries, isStatsChannel, lockReadOnlyChannel, lockStatsChannel, privateModerationChannel, SetupError,
+} from './setup.mjs';
 
 const DAY = 86_400_000;
 const NO_MENTIONS = { parse: [] };
@@ -165,12 +167,23 @@ export function createSecurity({ client, guildId, getState, logError }) {
     }
   }
 
-  async function gateRoles(guild) {
+  async function gateRoles(guild, repair = false) {
     const state = getState();
     const serverRoles = await guild.roles.fetch();
     const gate = Object.fromEntries(['verified', 'review', 'blocked'].map((key) => [key, serverRoles.get(state.roles[key])]));
-    if (Object.values(gate).some((role) => !role?.editable || role.permissions.bitfield !== 0n)) {
-      throw new SetupError('Weryfikacja wymaga sprawdzenia ról przez administrację.');
+    for (const [key, role] of Object.entries(gate)) {
+      if (!role?.editable) {
+        console.warn(`Weryfikacja: bot nie może zarządzać rolą ${role?.name ?? key} (${role?.id ?? 'brak ID'}). Sprawdź hierarchię ról.`);
+        throw new SetupError('Weryfikacja wymaga sprawdzenia ról przez administrację.');
+      }
+      if (role.permissions.bitfield !== 0n && repair) {
+        gate[key] = await role.setPermissions(0n, 'Przywrócenie bezpiecznych uprawnień technicznej roli weryfikacji');
+        console.log(`Przywrócono uprawnienia technicznej roli weryfikacji: ${role.name}.`);
+      }
+      if (gate[key].permissions.bitfield !== 0n) {
+        console.warn(`Weryfikacja: techniczna rola ${role.name} ma dodatkowe uprawnienia serwerowe.`);
+        throw new SetupError('Weryfikacja wymaga sprawdzenia ról przez administrację.');
+      }
     }
     return gate;
   }
@@ -178,8 +191,8 @@ export function createSecurity({ client, guildId, getState, logError }) {
   async function accept(interaction) {
     const guild = interaction.guild;
     const state = getState();
-    if (!active(guild) || interaction.channelId !== state.channels.weryfikacja ||
-        interaction.message.id !== state.messages.weryfikacja) {
+    if (!active(guild) || interaction.channelId !== state.channels.regulamin ||
+        interaction.message.id !== state.messages.regulamin) {
       throw new SetupError('Otwórz aktualny panel weryfikacji.');
     }
     return underLock(interaction.user, async () => {
@@ -238,7 +251,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
       if (actor.roles.cache.has(state.roles.blocked)) return 'Twoja weryfikacja została wstrzymana.';
       if (isVerified(actor)) return 'Masz rolę **Zweryfikowany**.';
       if (actor.roles.cache.has(state.roles.review)) return 'Zgłoszenie czeka na ocenę moderatora.';
-      return `Przeczytaj regulamin i użyj przycisku w <#${state.channels.weryfikacja}>.`;
+      return `Przeczytaj regulamin i użyj przycisku w <#${state.channels.regulamin}>.`;
     }
     requirePermission(actor, PermissionFlagsBits.ModerateMembers);
     const target = await targetMember(interaction, actor, panel?.id);
@@ -341,7 +354,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
       if (alert) await log(guild, '🚨 Wykryto falę dołączeń',
         'Co najmniej 6 osób dołączyło w 20 sekund. Nowe weryfikacje trafiają do ręcznej oceny.', 0xE85D75);
       const welcome = await post(guild, 'witamy', card('👋 Witaj w Centrum Graczy!',
-        `Hej <@${user.id}>! Fajnie, że do nas dołączasz. Na początek zajrzyj do <#${getState().channels['start-tutaj']}> i zaakceptuj regulamin w <#${getState().channels.weryfikacja}>. Do zobaczenia w grze! 🎮`, 0x2CA58D));
+        `Hej <@${user.id}>! Fajnie, że do nas dołączasz. Przeczytaj i zaakceptuj zasady w <#${getState().channels.regulamin}>, żeby odblokować serwer. Do zobaczenia w grze! 🎮`, 0x2CA58D));
       if (welcome) console.log('Wysłano automatyczne powitanie w kanale witamy.');
     }
     await log(guild, '📥 Dołączenie', `${label(user)}\nKonto utworzone <t:${Math.floor(user.createdTimestamp / 1000)}:R>.`);
@@ -379,6 +392,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
       await lockStatsChannel(channel);
       return;
     }
+    await lockReadOnlyChannel(channel, getState());
     if (channel.id !== getState().channels.nsfw || channel.type !== ChannelType.GuildText || channel.nsfw) return;
     await channel.edit({ nsfw: true, reason: 'Przywrócenie ograniczenia wiekowego w strefie 18+' });
     await log(channel.guild, '🔞 Przywrócono ograniczenie wiekowe', `Kanał: <#${channel.id}>`, 0xE85D75);
@@ -443,5 +457,5 @@ export function createSecurity({ client, guildId, getState, logError }) {
     return `**📊 Statystyki serwera**\n👥 Razem: **${total}**\n🟢 Online: **${online}**\n⚫ Offline: **${offline}**`;
   }
 
-  return { accept, isVerified, log, moderate, refreshStats, review, statisticsReply, syncPresence };
+  return { accept, gateRoles, isVerified, log, moderate, refreshStats, review, statisticsReply, syncPresence };
 }

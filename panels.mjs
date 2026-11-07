@@ -16,9 +16,8 @@ function row(...components) {
   return new ActionRowBuilder().addComponents(...components);
 }
 
-export function communityButtons(hasCleanupRole) {
-  return row(button('report', 'Zgłoś sprawę'), button('stats', 'Statystyki'),
-    ...(hasCleanupRole ? [button('cleanup-start', 'Podgląd starych kanałów')] : []));
+export function communityButtons() {
+  return row(button('report', 'Zgłoś sprawę'));
 }
 
 export function staffButtons() {
@@ -32,9 +31,8 @@ export function staffButtons() {
   ];
 }
 
-export function confirmCleanup(code, fromStart) {
-  const action = fromStart ? 'delete-start:' : 'delete:';
-  return row(button(action + code, 'Trwale usuń kanały z podglądu', ButtonStyle.Danger));
+export function confirmCleanup(code) {
+  return row(button('delete:' + code, 'Trwale usuń kanały z podglądu', ButtonStyle.Danger));
 }
 
 export function reviewButtons(id) {
