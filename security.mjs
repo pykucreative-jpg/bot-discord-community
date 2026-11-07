@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
-  AuditLogEvent, ChannelType, EmbedBuilder, Events, MessageType, PermissionFlagsBits,
+  AuditLogEvent, ChannelType, EmbedBuilder, Events, GuildAuditLogsEntry, MessageType, PermissionFlagsBits,
   SlashCommandBuilder, SystemChannelFlagsBitField, escapeMarkdown,
 } from 'discord.js';
 import { channelLabel } from './plan.mjs';
@@ -15,13 +15,21 @@ const newAccountAge = 7 * DAY;
 const messageAgeLimit = 14 * DAY;
 const clearPreviewDuration = 5 * 60_000;
 const NO_MENTIONS = { parse: [] };
-const AUDIT_EVENTS = new Set([
-  'GuildUpdate', 'ChannelCreate', 'ChannelUpdate', 'ChannelDelete', 'ChannelOverwriteCreate',
-  'ChannelOverwriteUpdate', 'ChannelOverwriteDelete', 'MemberKick', 'MemberPrune', 'MemberBanAdd',
-  'MemberBanRemove', 'MemberUpdate', 'MemberRoleUpdate', 'RoleCreate', 'RoleUpdate', 'RoleDelete',
-  'InviteCreate', 'InviteDelete', 'WebhookCreate', 'WebhookUpdate', 'WebhookDelete', 'MessageDelete',
-  'MessageBulkDelete', 'AutoModerationRuleCreate', 'AutoModerationRuleUpdate', 'AutoModerationRuleDelete',
-].map((key) => AuditLogEvent[key]));
+const auditActions = new Map(Object.entries({
+  GuildUpdate: 'Zmieniono ustawienia serwera',
+  ChannelCreate: 'Utworzono kanał', ChannelUpdate: 'Zmieniono ustawienia kanału', ChannelDelete: 'Usunięto kanał',
+  ChannelOverwriteCreate: 'Dodano uprawnienia w kanale', ChannelOverwriteUpdate: 'Zmieniono uprawnienia w kanale',
+  ChannelOverwriteDelete: 'Usunięto nadpisanie uprawnień w kanale',
+  MemberKick: 'Wyrzucono członka', MemberPrune: 'Usunięto nieaktywnych członków',
+  MemberBanAdd: 'Zbanowano użytkownika', MemberBanRemove: 'Zdjęto bana',
+  MemberUpdate: 'Zmieniono ustawienia członka', MemberRoleUpdate: 'Zmieniono role członka',
+  RoleCreate: 'Utworzono rolę', RoleUpdate: 'Zmieniono rolę', RoleDelete: 'Usunięto rolę',
+  InviteCreate: 'Utworzono zaproszenie', InviteDelete: 'Usunięto zaproszenie',
+  WebhookCreate: 'Utworzono webhook', WebhookUpdate: 'Zmieniono webhook', WebhookDelete: 'Usunięto webhook',
+  MessageDelete: 'Usunięto wiadomość', MessageBulkDelete: 'Usunięto wiadomości zbiorczo',
+  AutoModerationRuleCreate: 'Utworzono regułę AutoMod', AutoModerationRuleUpdate: 'Zmieniono regułę AutoMod',
+  AutoModerationRuleDelete: 'Usunięto regułę AutoMod',
+}).map(([key, description]) => [AuditLogEvent[key], description]));
 const BOOST_TYPES = new Set([
   MessageType.GuildBoost, MessageType.GuildBoostTier1, MessageType.GuildBoostTier2, MessageType.GuildBoostTier3,
 ]);
@@ -65,11 +73,79 @@ export const securityCommands = [
 ];
 
 function label(user) {
-  return `${escapeMarkdown(user.username)} • \`${user.id}\``;
+  return auditDisplayName(user);
 }
 
 function detail(value) {
   return escapeMarkdown(String(value ?? 'brak').slice(0, 350));
+}
+
+function auditDisplayName(user, displayName) {
+  const name = displayName ?? user?.globalName ?? user?.username;
+  if (!name) return 'Nazwa użytkownika niedostępna';
+  return user?.username && name !== user.username ? detail(`${name} (@${user.username})`) : detail(name);
+}
+
+async function auditUserName(guild, id, known) {
+  if (!id) return 'Discord lub automatyzacja';
+  const member = guild.members.cache?.get(id);
+  const user = known?.username ? known : (member?.user ?? guild.client.users?.cache.get(id) ??
+    await guild.client.users?.fetch(id).catch(() => null));
+  return auditDisplayName(user, member?.displayName);
+}
+
+function auditChannelName(guild, channel) {
+  const name = channel?.name ?? guild.channels.cache?.get(channel?.id)?.name;
+  return name ? `#${detail(name)}` : undefined;
+}
+
+async function auditTargetName(guild, entry) {
+  const type = entry.targetType ?? GuildAuditLogsEntry.targetType(entry.action);
+  const target = entry.target;
+  const changedName = entry.changes?.find(({ key }) => key === 'name');
+  const name = target?.name ?? changedName?.new ?? changedName?.old;
+  if (type === 'User' || (type === 'Message' && entry.action === AuditLogEvent.MessageDelete)) {
+    return entry.targetId ? auditUserName(guild, entry.targetId, target) : 'Członkowie serwera';
+  }
+  if (type === 'Guild') return detail(name ?? guild.name);
+  if (type === 'Channel' || type === 'Thread' || entry.action === AuditLogEvent.MessageBulkDelete) {
+    return name ? `#${detail(name)}` : auditChannelName(guild, { id: entry.targetId }) ?? 'Kanał niedostępny';
+  }
+  if (type === 'Role') return detail(name ?? guild.roles.cache?.get(entry.targetId)?.name ?? 'Rola niedostępna');
+  if (type === 'Invite') {
+    const channel = target?.channel ?? { id: entry.changes?.find(({ key }) => key === 'channel_id')?.new };
+    return auditChannelName(guild, channel) ?? 'Zaproszenie do serwera';
+  }
+  return detail(name ?? (type === 'AutoModeration' ? 'Reguła AutoMod' : 'Cel niedostępny'));
+}
+
+function auditChange({ key, old, new: next }) {
+  const value = (item) => item == null || item === '' ? 'brak' : detail(String(item).slice(0, 110));
+  const change = (name) => `${name}: ${value(old)} → ${value(next)}`;
+  switch (key) {
+    case 'name': return change('Nazwa');
+    case 'nick': return change('Pseudonim');
+    case 'topic': return 'Zmieniono temat kanału.';
+    case 'permissions':
+    case 'permission_overwrites':
+    case 'allow':
+    case 'deny': return 'Zmieniono uprawnienia.';
+    case 'rate_limit_per_user': return `Tryb powolny: ${old ?? 0} s → ${next ?? 0} s`;
+    case 'enabled': return next ? 'Włączono regułę.' : 'Wyłączono regułę.';
+    case 'nsfw': return next ? 'Włączono ograniczenie wiekowe.' : 'Wyłączono ograniczenie wiekowe.';
+    case 'communication_disabled_until': {
+      const time = Date.parse(next);
+      return Number.isFinite(time) ? `Ograniczono pisanie do <t:${Math.floor(time / 1000)}:F>.` : 'Zdjęto ograniczenie pisania.';
+    }
+    case '$add':
+    case '$remove': {
+      const changes = next ?? old;
+      const roles = Array.isArray(changes) ? changes.map((role) => role.name).filter(Boolean) : [];
+      const verb = key === '$add' ? 'Dodano' : 'Zdjęto';
+      return roles.length ? `${verb} role: ${value(roles.join(', '))}` : `${verb} role.`;
+    }
+    default: return undefined;
+  }
 }
 
 function accountAge(user, now) {
@@ -511,10 +587,27 @@ export function createSecurity({ client, guildId, getState, logError }) {
       `Kanał: <#${channel.id}>\nLiczba wiadomości: ${messages.size}`);
   });
   on(Events.GuildAuditLogEntryCreate, async (entry, guild) => {
-    if (!active(guild) || !AUDIT_EVENTS.has(entry.action)) return;
+    const action = auditActions.get(entry.action);
+    if (!active(guild) || !action) return;
     if (entry.reason === 'Aktualizacja licznika serwera') return;
-    await log(guild, '🧾 Dziennik audytu Discorda',
-      `Akcja: **${AuditLogEvent[entry.action]}**\nWykonawca: \`${entry.executorId ?? 'brak'}\`\nCel: \`${entry.targetId ?? 'brak'}\`\nPowód: ${detail(entry.reason)}`);
+    const delegated = entry.executorId === guild.client.user.id && /^Moderator (\d{17,20}):\s*(.*)$/s.exec(entry.reason ?? '');
+    const [executor, target] = await Promise.all([
+      auditUserName(guild, delegated ? delegated[1] : entry.executorId, delegated ? undefined : entry.executor),
+      auditTargetName(guild, entry),
+    ]);
+    const channel = auditChannelName(guild, entry.extra?.channel);
+    const extraTarget = entry.extra?.displayName ?? entry.extra?.name;
+    const details = [...new Set((entry.changes ?? []).map(auditChange).filter(Boolean))].slice(0, 5);
+    const lines = [
+      `Wykonawca: **${executor}**`,
+      `Cel: **${target}**`,
+      `Powód: ${detail((delegated ? delegated[2] : entry.reason) || 'Nie podano')}`,
+      ...(channel ? [`Kanał: ${channel}`] : []),
+      ...(extraTarget ? [`Dotyczy: ${detail(extraTarget)}`] : []),
+      ...(Number.isFinite(entry.extra?.count) ? [`Liczba wiadomości: ${entry.extra.count}`] : []),
+      ...details.map((change) => `• ${change}`),
+    ];
+    await log(guild, `🧾 ${action}`, lines.join('\n'));
   });
 
   setInterval(() => {
