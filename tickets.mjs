@@ -76,7 +76,7 @@ export function createTickets({ getState, log, logError }) {
       if (channels.filter(({ parentId }) => parentId === state.categories.moderation).size >= 48) {
         throw new SetupError('Brakuje miejsca na nowy kanał zgłoszenia. Poproś moderację o pomoc.');
       }
-      const staffChannel = await privateModerationChannel(guild, state);
+      const logsChannel = await privateModerationChannel(guild, state, { name: 'logi-bota' });
       const channel = await guild.channels.create({
         name: 'zgloszenie-' + user.id.slice(-6),
         parent: state.categories.moderation,
@@ -92,7 +92,7 @@ export function createTickets({ getState, log, logError }) {
       recentlyOpened.set(user.id, true);
       setTimeout(() => recentlyOpened.delete(user.id), 60_000).unref();
       await postOpening(channel, interaction, description).catch(logError);
-      await staffChannel.send({
+      await logsChannel.send({
         content: `📨 **Nowe zgłoszenie** od <@${user.id}> — <#${channel.id}>.`,
         allowedMentions: noMentions,
       }).catch(logError);
