@@ -126,19 +126,29 @@ export function createSecurity({ client, guildId, getState, logError }) {
     const parent = getState().categories['live-stats'];
     if (!parent) return;
     const counts = stats(guild);
+    const icons = { online: '🟢', offline: '🔴', total: '👥' };
+    const suffix = /[0-9]+(?=\s*$)/u;
+    const names = [];
     let renamed = false;
     for (const { channel } of channelEntries) {
       if (!channel.counter) continue;
       const id = getState().channels[channel.name];
       if (!id) continue;
-      const current = await guild.channels.fetch(id);
-      const name = `${channelLabel(channel)} - ${counts[channel.counter]}`;
-      if (current?.type === ChannelType.GuildVoice && current.parentId === parent && current.name !== name) {
+      const current = await guild.channels.fetch(id, { force: true });
+      if (current?.type !== ChannelType.GuildVoice || current.parentId !== parent) continue;
+      const label = channelLabel(channel);
+      const count = String(counts[channel.counter]);
+      const previousDefault = current.name === label || current.name.replace(suffix, '').trimEnd() === `${label} -` ||
+        (channel.counter === 'total' && /^📊│Statystyki(?: • |$)/u.test(current.name));
+      const name = previousDefault ? `${icons[channel.counter]} ${count}`
+        : suffix.test(current.name) ? current.name.replace(suffix, count) : `${current.name.trimEnd()} ${count}`;
+      names.push(name);
+      if (current.name !== name) {
         await current.setName(name, 'Aktualizacja licznika serwera');
         renamed = true;
       }
     }
-    if (renamed) console.log(`Liczniki: Online - ${counts.online}, Offline - ${counts.offline}, Osoby - ${counts.total}.`);
+    if (renamed) console.log(`Liczniki: ${names.join(', ')}.`);
   }
 
   async function syncPresence(guild) {
