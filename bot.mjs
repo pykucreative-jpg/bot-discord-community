@@ -295,6 +295,21 @@ async function submitReport(interaction, text = interaction.options.getString('o
 
 function logError(error) {
   console.error('Błąd Discorda lub konfiguracji:', error.name, error.code ?? '', error.status ?? '');
+  if (Number(error.code) !== 50035 || !error.rawError?.errors) return;
+  const fields = [];
+  function collect(node, path = '') {
+    for (const { code } of node._errors ?? []) {
+      if (/^[A-Z0-9_]+$/.test(code)) fields.push(`${path || '(root)'}=${code}`);
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key !== '_errors' && /^[a-zA-Z0-9_]+$/.test(key) && value && typeof value === 'object') {
+        collect(value, path ? `${path}.${key}` : key);
+      }
+    }
+  }
+  collect(error.rawError.errors);
+  const route = /^https:\/\/discord\.com\/api\/v\d+\/(guilds|channels)\/\d+(\/roles|\/channels|\/messages)?$/.exec(error.url ?? '');
+  console.error('Odrzucone pola Discorda:', route ? [route[1], route[2] ?? ''].join('') : 'formularz', fields.slice(0, 20).join(', '));
 }
 
 function loginFailure(error) {
