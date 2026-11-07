@@ -297,6 +297,17 @@ function logError(error) {
   console.error('Błąd Discorda lub konfiguracji:', error.name, error.code ?? '', error.status ?? '');
 }
 
+function loginFailure(error) {
+  if (error.message === 'Used disallowed intents' || Number(error.code) === 4014) {
+    return 'Discord odrzucił logowanie (4014). W Discord Developer Portal → Bot → Privileged Gateway Intents włącz Server Members Intent i Presence Intent.';
+  }
+  if (error.message === 'Authentication failed' || error.code === 'TokenInvalid' ||
+      Number(error.code) === 4004 || error.status === 401) {
+    return 'Discord odrzucił token. Ustaw aktualny token z zakładki Bot w zmiennej DISCORD_TOKEN na Railway.';
+  }
+  return 'Logowanie bota nie powiodło się. Sprawdź połączenie z Discordem i ustawienia aplikacji.';
+}
+
 function validateControl(interaction, action) {
   const state = journal.state;
   const publicPanel = ['report', 'send-report', 'stats'].includes(action);
@@ -475,7 +486,7 @@ try {
   await client.login(token);
 } catch (error) {
   logError(error);
-  console.error('Logowanie bota nie powiodło się. Sprawdź token i połączenie z Discordem.');
+  console.error(loginFailure(error));
   client.destroy();
   process.exitCode = 1;
 }
