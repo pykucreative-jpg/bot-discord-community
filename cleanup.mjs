@@ -68,7 +68,7 @@ export function createCleanup() {
     if (guild.features.includes(GuildFeature.Community)) {
       if (obsoleteIds.has(guild.rulesChannelId)) references.rulesChannel = state.channels.regulamin;
       if (obsoleteIds.has(guild.publicUpdatesChannelId)) references.publicUpdatesChannel = state.channels['mod-log'];
-      if (obsoleteIds.has(guild.safetyAlertsChannelId)) references.safetyAlertsChannel = state.channels['mod-log'];
+      if (obsoleteIds.has(guild.safetyAlertsChannelId)) references.safetyAlertsChannel = state.channels['logi-bota'];
     }
     if (!guild.systemChannelId || obsoleteIds.has(guild.systemChannelId)) Object.assign(references, boostSystemSettings(guild, state));
     if (obsoleteIds.has(guild.afkChannelId)) references.afkChannel = null;

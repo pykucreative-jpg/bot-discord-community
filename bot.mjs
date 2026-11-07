@@ -45,7 +45,7 @@ const commands = [
   ownerCommand('serwer-zbuduj', 'Utwórz strukturę serwera społecznościowego.')
     .addStringOption((option) => option.setName('potwierdzenie')
       .setDescription('Wpisz BUDUJ, aby uruchomić konfigurację.').setRequired(true)),
-  ownerCommand('serwer-ochrona', 'Włącz blokadę masowych oznaczeń i alerty w kanale modów.')
+  ownerCommand('serwer-ochrona', 'Włącz blokadę masowych oznaczeń i alerty w kanale logów.')
     .addStringOption((option) => option.setName('potwierdzenie')
       .setDescription('Wpisz WLACZ, aby dodać regułę AutoMod.').setRequired(true)),
   ownerCommand('serwer-boosty', 'Ustaw nowy kanał jako kanał systemowy dla powiadomień o boostach.')
@@ -360,7 +360,7 @@ function validateControl(interaction, action) {
   const state = journal.state;
   const publicPanel = ['report', 'send-report'].includes(action);
   const key = publicPanel ? 'start-tutaj' : 'mod-log';
-  const mainPanel = publicPanel || ['status', 'cleanup', 'announce', 'publish', 'moderate',
+  const mainPanel = publicPanel || ['status', 'announce', 'publish', 'moderate',
     'unban', 'lift-ban', 'clear-channel', 'clear'].includes(action);
   if (!state.securityReady || interaction.channelId !== state.channels[key] ||
       interaction.message?.author?.id !== interaction.client.user.id ||
@@ -370,9 +370,6 @@ function validateControl(interaction, action) {
 }
 
 async function useControl(interaction, action, key, id) {
-  if (action === 'cleanup') {
-    return authorizedCleanup(interaction, 'podglad', undefined, { panel: true });
-  }
   if (action === 'delete' && /^\d{6}$/.test(key)) {
     return authorizedCleanup(interaction, 'usun', key, { panel: true, fromStart: action === 'delete-start' });
   }

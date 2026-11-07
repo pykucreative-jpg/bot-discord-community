@@ -22,7 +22,7 @@ export function communityButtons() {
 
 export function staffButtons() {
   return [
-    row(button('status', 'Stan serwera'), button('cleanup', 'Podgląd starych kanałów'),
+    row(button('status', 'Stan serwera'),
       button('announce:ogloszenia', 'Ogłoszenie'), button('announce:wydarzenia', 'Wydarzenie'),
       button('unban', 'Odbanuj po ID')),
     row(new UserSelectMenuBuilder().setCustomId(controls + 'moderate').setPlaceholder('Wybierz osobę do moderacji')),

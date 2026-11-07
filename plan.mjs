@@ -84,7 +84,9 @@ export const categories = [
   {
     key: 'moderation', name: '🔒 PRYWATNE', legacyName: '🛡️ MODERACJA', access: 'mods',
     channels: [
-      { name: 'mod-log', label: 'modzi', emoji: '🛡️', legacyEmoji: '📋', topic: 'Czat moderatorów, zgłoszenia, ocena kont, logi i alerty AutoMod.' },
+      { name: 'mod-log', label: 'modzi', emoji: '🛡️', legacyEmoji: '📋', layout: 4,
+        topic: 'Czat moderatorów, zgłoszenia i ocena kont.' },
+      { name: 'logi-bota', emoji: '📋', topic: 'Zdarzenia serwera, działania moderacji i alerty AutoMod.', access: 'logs' },
     ],
   },
   {
@@ -134,9 +136,8 @@ export const starterMessages = {
   ].join('\n'),
   'mod-log': () => [
     '🛡️ Panel moderatorów',
-    'Tutaj trafiają logi, alarmy ochrony, prywatne zgłoszenia i konta do oceny.',
+    'Tutaj trafiają prywatne zgłoszenia i konta do oceny.',
     'Przyciski pod zgłoszeniem pozwalają zatwierdzić lub wstrzymać dostęp. Z menu poniżej wybierzesz osobę do moderacji.',
-    'Właściciel może także wyświetlić listę starych kanałów do usunięcia.',
   ].join('\n\n'),
 };
 

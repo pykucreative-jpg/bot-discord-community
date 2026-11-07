@@ -105,7 +105,8 @@ export function createSecurity({ client, guildId, getState, logError }) {
     const state = getState();
     if (!active(guild) || !state.channels[name]) return;
     try {
-      const channel = name === 'mod-log' ? await privateModerationChannel(guild, state, false)
+      const channel = ['mod-log', 'logi-bota'].includes(name)
+        ? await privateModerationChannel(guild, state, { force: false, name })
         : await guild.channels.fetch(state.channels[name]);
       if (channel?.type === ChannelType.GuildText) return await channel.send({ embeds: [embed], allowedMentions: NO_MENTIONS });
     } catch (error) {
@@ -114,7 +115,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
   }
 
   function log(guild, title, description, color) {
-    return post(guild, 'mod-log', card(title, description, color));
+    return post(guild, 'logi-bota', card(title, description, color));
   }
 
   function stats(guild) {
@@ -314,7 +315,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
     }
     const target = await targetMember(interaction, actor, panel?.id);
     if (action === 'ostrzez') {
-      const channel = await privateModerationChannel(guild, getState());
+      const channel = await privateModerationChannel(guild, getState(), { name: 'logi-bota' });
       await channel.send({ embeds: [card('⚠️ Ostrzeżenie',
         `Osoba: ${label(target.user)}\nModerator: ${label(actor.user)}\nPowód: ${detail(reason)}`, 0xE7A84C)], allowedMentions: NO_MENTIONS });
       const sent = await target.send({ embeds: [card('⚠️ Ostrzeżenie od moderacji',

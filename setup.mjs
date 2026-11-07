@@ -21,7 +21,7 @@ const statsMask = new PermissionsBitField(statsBlocked).bitfield;
 const moderators = ['admin', 'mod'];
 const communityStaff = [...moderators, 'helper', 'organizer'];
 const layoutVersion = 3;
-const messageVersion = 5;
+const messageVersion = 6;
 
 export const botPermissions = new PermissionsBitField([
   ...read, ...noWrite, ...voice, 'ViewAuditLog',
@@ -208,8 +208,8 @@ export async function lockReadOnlyChannel(channel, state) {
   const item = channelEntries.find(({ channel: definition }) => state.channels[definition.name] === channel.id);
   const access = item?.channel.access ?? item?.category.access;
   const guild = channel.guild;
-  if (access === 'mods') {
-    const permissionOverwrites = overwrites(guild, state, 'mods');
+  if (access === 'mods' || access === 'logs') {
+    const permissionOverwrites = overwrites(guild, state, access);
     if (!matchesOverwrites(channel.permissionOverwrites.cache, permissionOverwrites)) {
       await channel.edit({ permissionOverwrites, reason: 'Prywatny dostęp do kanału tylko dla moderacji' });
     }
@@ -275,11 +275,11 @@ function overwrites(guild, state, access) {
   const bot = guild.client.user.id;
   const hide = { id: everyone, type: OverwriteType.Role, allow: [], deny: ['ViewChannel'] };
   const botAccess = allow(bot, [...read, ...write], OverwriteType.Member);
-  if (access === 'mods') {
+  if (access === 'mods' || access === 'logs') {
     return [
       { ...hide, deny: [...hide.deny, ...noWrite] },
       botAccess,
-      ...moderators.map((key) => allow(state.roles[key], [...read, ...write])),
+      ...moderators.map((key) => allow(state.roles[key], access === 'logs' ? read : [...read, ...write])),
     ];
   }
   if (access === 'lobby') {
@@ -390,7 +390,7 @@ export async function applySetup(guild, journal, plan) {
   await positionStats(guild, state);
   const currentChannels = await guild.channels.fetch();
   for (const { category, channel } of channelEntries) {
-    if (['lobby', 'read', 'events', 'mods'].includes(channel.access ?? category.access)) {
+    if (['lobby', 'read', 'events', 'mods', 'logs'].includes(channel.access ?? category.access)) {
       await lockReadOnlyChannel(currentChannels.get(state.channels[channel.name]), state);
     }
   }
@@ -484,13 +484,13 @@ async function pinStaffPanel(name, message) {
   }
 }
 
-export async function privateModerationChannel(guild, state, force = true) {
-  const id = state.channels['mod-log'];
+export async function privateModerationChannel(guild, state, { force = true, name = 'mod-log' } = {}) {
+  const id = state.channels[name];
   if (!id || !state.roles.mod || !state.roles.admin) {
     throw new SetupError('Najpierw ukończ konfigurację serwera.');
   }
   const channel = await guild.channels.fetch(id, { force });
-  const expected = overwrites(guild, state, 'mods');
+  const expected = overwrites(guild, state, name === 'logi-bota' ? 'logs' : 'mods');
   const actual = channel?.permissionOverwrites?.cache;
   if (channel?.type !== ChannelType.GuildText || channel.parentId !== state.categories.moderation ||
       !matchesOverwrites(actual, expected)) {
@@ -500,9 +500,28 @@ export async function privateModerationChannel(guild, state, force = true) {
 }
 
 export async function installProtection(guild, state) {
-  const channel = await privateModerationChannel(guild, state);
+  const channel = await privateModerationChannel(guild, state, { name: 'logi-bota' });
   const rules = await guild.autoModerationRules.fetch();
   const outcomes = [];
+  let moved = 0;
+  for (const rule of rules.values()) {
+    const sendsToStaff = (action) => action.type === AutoModerationActionType.SendAlertMessage &&
+      action.metadata?.channelId === state.channels['mod-log'];
+    if (!rule.actions?.some(sendsToStaff)) continue;
+    await rule.edit({
+      actions: rule.actions.map((action) => ({
+        type: action.type,
+        metadata: {
+          channel: sendsToStaff(action) ? channel.id : action.metadata?.channelId ?? undefined,
+          durationSeconds: action.metadata?.durationSeconds ?? undefined,
+          customMessage: action.metadata?.customMessage ?? undefined,
+        },
+      })),
+      reason: 'Przeniesienie alertów do kanału logi-bota',
+    });
+    moved++;
+  }
+  if (moved) outcomes.push(`Przeniesiono alerty ${moved} reguł AutoMod do <#${channel.id}>.`);
   const filters = [
     { label: 'Masowe oznaczenia', triggerType: AutoModerationRuleTriggerType.MentionSpam,
       triggerMetadata: { mentionTotalLimit: 5, mentionRaidProtectionEnabled: true } },

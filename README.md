@@ -1,6 +1,6 @@
 # Centrum społeczności graczy · Bot Discord
 
-Konfigurator tworzy **20 ról, 7 kategorii i 22 kanały**. Jest sześć pokojów do rozmów i grania oraz trzy zablokowane kanały głosowe z licznikami. Bot publikuje karty powitania, wspólnego regulaminu z weryfikacją i wyboru ról. Kanały, role i uprawnienia działają po wyłączeniu programu. Komendy, liczniki i obsługa zdarzeń wymagają uruchomionego bota.
+Konfigurator tworzy **20 ról, 7 kategorii i 23 kanały**. Jest sześć pokojów do rozmów i grania oraz trzy zablokowane kanały głosowe z licznikami. Bot publikuje karty powitania, wspólnego regulaminu z weryfikacją i wyboru ról. Kanały, role i uprawnienia działają po wyłączeniu programu. Komendy, liczniki i obsługa zdarzeń wymagają uruchomionego bota.
 
 Po uruchomieniu bot sam buduje lub uzupełnia serwer, włącza brakujące reguły AutoMod, ustawia powiadomienia o boostach i sprawdza, czy panele nadal istnieją. W trakcie pracy reaguje na zdarzenia serwera i odświeża liczniki. Członkowie korzystają z przycisków i menu, a nietypowe zgłoszenia weryfikacyjne rozpatruje moderator.
 
@@ -13,7 +13,7 @@ Po uruchomieniu bot sam buduje lub uzupełnia serwer, włącza brakujące reguł
 | ├─ 💬 SPOŁECZNOŚĆ ─╮ | 💬│ogolny, 📸│media-i-memy, 👋│witamy z podziękowaniami za boosty oraz 🌙│pozegnania. |
 | ├─ 🎮 GRY I EVENTY ─╮ | 🎮│gaming, 🤝│szukam-ekipy i 📅│wydarzenia na turnieje, konkursy i wspólne granie. |
 | ├─ 🔊 GŁOSOWE ─╮ | ☕│Pogaduchy, 🎧│Duo (2), 🎮│Gramy 1 (5), 🕹️│Gramy 2 (5), 🏆│Rankedy (5) i 🌙│Chill. |
-| ├─ 🔒 PRYWATNE ─╮ | Jeden kanał 🛡️│modzi. Czat, zgłoszenia, kolejka weryfikacji, logi i alerty w jednym miejscu. Dostęp mają Moderatorzy, Administratorzy i właściciel. |
+| ├─ 🔒 PRYWATNE ─╮ | 🛡️│modzi na rozmowy, zgłoszenia i kolejkę weryfikacji. 📋│logi-bota to osobny kanał na zdarzenia i alerty, do odczytu dla moderacji. |
 | ╰─ 🔞 STREFA 18+ ─╯ | 🔞│nsfw z natywnym oznaczeniem kanału ograniczonego wiekowo. |
 
 Przed weryfikacją nowi członkowie widzą w utworzonej strukturze powitanie oraz wspólny kanał regulaminu i weryfikacji. Po kliknięciu **Akceptuję regulamin** dostają rolę **Zweryfikowany**, która odblokowuje kanały członkowskie. Konto młodsze niż 7 dni lub weryfikacja podczas wykrytej fali dołączeń trafia do kolejki moderacji. Fala to co najmniej 6 dołączeń osób w 20 sekund. Wykrycie włącza ręczną ocenę na 10 minut. Zgłoszenie w kolejce zostaje oznaczone osobną rolą także po restarcie.
@@ -43,9 +43,9 @@ Rangi ekipy to **Administrator**, **Moderator**, **Pomocnik** i **Organizator**.
        npm.cmd start
 
 5. Poczekaj na komunikat „Gotowe” w terminalu. Bot utworzy strukturę, opublikuje karty i spróbuje włączyć reguły AutoMod. Otwórz 👋│start-tutaj, by zobaczyć panel członkowski, oraz 🛡️│modzi, by zobaczyć panel moderatorów. Bot przypina panel moderatorów, jeśli ma uprawnienie do przypinania wiadomości.
-6. Jeśli zastępujesz wcześniejszy układ, jako właściciel kliknij **Podgląd starych kanałów** w panelu modów. Sprawdź listę w prywatnym załączniku, a następnie kliknij **Trwale usuń kanały z podglądu**. Potwierdzenie jest przypisane do osoby, która otworzyła podgląd, i wygasa po 5 minutach. Usunięcie kanału usuwa jego historię, wątki i posty na forum. Jeśli lista się zmieni, bot poprosi o nowy podgląd. Jeżeli Discord zatrzyma operację na chronionym kanale, odpowiedź poda liczbę już usuniętych elementów.
+6. Jeśli zastępujesz wcześniejszy układ, jako właściciel użyj **/serwer-porzadki podglad**. Sprawdź listę w prywatnym załączniku, a następnie potwierdź komendą **/serwer-porzadki usun** z kodem. Potwierdzenie jest przypisane do osoby, która otworzyła podgląd, i wygasa po 5 minutach. Usunięcie kanału usuwa jego historię, wątki i posty na forum. Jeśli lista się zmieni, bot poprosi o nowy podgląd. Jeżeli Discord zatrzyma operację na chronionym kanale, odpowiedź poda liczbę już usuniętych elementów.
 
-Opcjonalnie ustaw `DISCORD_CLEANUP_ROLE_ID` na identyfikator istniejącej roli uprawnionej do sprzątania. Jej posiadacze mogą użyć /serwer-porzadki na kanale, na którym mają dostęp do komend. Przycisk sprzątania jest w prywatnym panelu modów. Bot sprawdza rolę przy podglądzie i przy potwierdzeniu. Delegacja obejmuje wyłącznie sprzątanie przez bota. Czyszczenie dotyczy kanałów i kategorii, a role pozostają na serwerze. Opcjonalna zmienna `DISCORD_CLEANUP_ROLE_NAME` zmienia nazwę wskazanej roli, jeśli bot ma uprawnienia do jej edycji.
+Opcjonalnie ustaw `DISCORD_CLEANUP_ROLE_ID` na identyfikator istniejącej roli uprawnionej do sprzątania. Jej posiadacze mogą użyć /serwer-porzadki na kanale, na którym mają dostęp do komend. Bot sprawdza rolę przy podglądzie i przy potwierdzeniu. Delegacja obejmuje wyłącznie sprzątanie przez bota. Czyszczenie dotyczy kanałów i kategorii, a role pozostają na serwerze. Opcjonalna zmienna `DISCORD_CLEANUP_ROLE_NAME` zmienia nazwę wskazanej roli, jeśli bot ma uprawnienia do jej edycji.
 
 ## Wdrożenie na Railway
 
@@ -61,7 +61,7 @@ Jeśli bot wcześniej budował ten sam serwer lokalnie, przed pierwszym startem 
 | 📜│regulamin-i-weryfikacja | **Akceptuję regulamin** uruchamia automatyczną ocenę konta. |
 | 🎭│wybierz-role | Menu nadają i zdejmują role społecznościowe. |
 | 🛡️│modzi, karta zgłoszenia weryfikacyjnego | **Zatwierdź dostęp** lub **Wstrzymaj dostęp**. |
-| 🛡️│modzi, panel moderatorów | Stan serwera, formularze ogłoszeń i wydarzeń oraz wybór osoby do ostrzeżenia, timeoutu, wyrzucenia, bana lub zmiany weryfikacji. Są też formularze odbanowania i czyszczenia wiadomości. Właściciel może zmieniać rangi i sprzątać stare kanały. |
+| 🛡️│modzi, panel moderatorów | Stan serwera, formularze ogłoszeń i wydarzeń oraz wybór osoby do ostrzeżenia, timeoutu, wyrzucenia, bana lub zmiany weryfikacji. Są też formularze odbanowania i czyszczenia wiadomości. Właściciel może zmieniać rangi. |
 
 ## Opcjonalne komendy
 
@@ -89,14 +89,14 @@ Komendy zaczynające się od /serwer- są przeznaczone dla właściciela. Modera
 
 ## Ochrona, logi i statystyki
 
-- **Spam i naloty.** AutoMod Discorda blokuje spam i wiadomości zawierające więcej niż 5 unikalnych oznaczeń, jeżeli reguły zostały dodane. Alerty trafiają do 🛡️│modzi. Niezależnie od AutoMod bot wykrywa 8 wiadomości w 8 sekund i stosuje 2 minuty ograniczenia pisania wobec kont, które może moderować. Sygnały podejrzanego konta oznaczają skierowanie do człowieka.
-- **Logi serwera.** Dołączenia, wyjścia, przejścia między kanałami głosowymi, weryfikacje, decyzje, akcje moderacyjne i wybrane zdarzenia audytu Discorda, takie jak zmiany ról, kanałów, zaproszeń i banów. Karty zdarzeń, ostrzeżenia i alarmy trafiają do 🛡️│modzi.
+- **Spam i naloty.** AutoMod Discorda blokuje spam i wiadomości zawierające więcej niż 5 unikalnych oznaczeń, jeżeli reguły zostały dodane. Alerty trafiają do 📋│logi-bota. Niezależnie od AutoMod bot wykrywa 8 wiadomości w 8 sekund i stosuje 2 minuty ograniczenia pisania wobec kont, które może moderować. Sygnały podejrzanego konta oznaczają skierowanie do człowieka.
+- **Logi serwera.** Dołączenia, wyjścia, przejścia między kanałami głosowymi, weryfikacje, decyzje, akcje moderacyjne i wybrane zdarzenia audytu Discorda, takie jak zmiany ról, kanałów, zaproszeń i banów. Karty zdarzeń, ostrzeżenia i alarmy trafiają do 📋│logi-bota.
 - **Logi wiadomości.** Edycje, usunięcia i zbiorcze usunięcia w nowych kanałach i ich wątkach. Log zawiera metadane, bez kopii tekstu. Po wyczyszczeniu pamięci podręcznej Discord może dostarczyć zdarzenie bez danych autora.
 - **Liczniki.** Razem obejmuje ludzi i boty. Online łączy dostępnych, bezczynnych i „Nie przeszkadzać”. Konta niewidoczne liczą się jako offline. Po restarcie liczby mogą się wyrównywać podczas pobierania statusów. Liczniki odświeżają się co 15 minut, żeby zmieścić się w limitach zmiany nazw.
 - **Boosty.** Bot dziękuje po otrzymaniu zdarzenia systemowego boosta. Jeśli powiadomienia systemowe są wyłączone, może wykryć pierwszy boost danego członka przez zmianę jego statusu. Aby otrzymywać zdarzenia kolejnych boostów, użyj /serwer-boosty. Discord może wyświetlić również własną systemową wiadomość.
 
 Przechowuj folder **data** z identyfikatorami utworzonych elementów. Uruchamiaj jedną kopię bota na serwer. Po zwykłym przerwaniu uruchom bota ponownie, żeby wznowił konfigurację. Jeśli po restarcie zgłasza blokadę, wyłącz wszystkie kopie, usuń wyłącznie pusty folder z końcówką .lock z folderu data i zachowaj plik .json. Jeśli przerwanie nastąpiło tuż po utworzeniu niezapisanego kanału, terminal wskaże konflikt nazw. Zmień nazwę konfliktowego kanału na Discordzie, uruchom bota ponownie i sprawdź go na liście do sprzątnięcia.
 
-Przy aktualizacji wcześniejszej paczki zachowaj folder data. Bot przeniesie kanały szukania ekipy i wydarzeń do kategorii gier, a 📋│mod-log przemianuje na 🛡️│modzi, zachowując historię i kierowane tam alerty. Wycofane kanały i kategorie pojawią się na liście do usunięcia. Jeśli bot wykryje dodatkowe reguły dostępu w aktualizowanym kanale, zatrzyma podgląd do czasu sprawdzenia ich przez właściciela. Nowy układ tworzy weryfikację bota niezależnie od wbudowanego Onboardingu Discorda, który wymaga kanałów pozwalających @everyone pisać. Sam tryb [Discord Community](https://support.discord.com/hc/en-us/articles/360047132851-Enabling-Your-Community-Server) można włączyć w ustawieniach Discorda z 📜│regulamin i 🛡️│modzi jako kanałem aktualizacji. Zostaw kanał modów prywatny.
+Przy aktualizacji wcześniejszej paczki zachowaj folder data. Bot przeniesie kanały szukania ekipy i wydarzeń do kategorii gier, a 📋│mod-log przemianuje na 🛡️│modzi, zachowując historię. Nowe alerty kieruje do 📋│logi-bota. Wycofane kanały i kategorie pojawią się na liście do usunięcia. Jeśli bot wykryje dodatkowe reguły dostępu w aktualizowanym kanale, zatrzyma podgląd do czasu sprawdzenia ich przez właściciela. Nowy układ tworzy weryfikację bota niezależnie od wbudowanego Onboardingu Discorda, który wymaga kanałów pozwalających @everyone pisać. Sam tryb [Discord Community](https://support.discord.com/hc/en-us/articles/360047132851-Enabling-Your-Community-Server) można włączyć w ustawieniach Discorda z 📜│regulamin i 🛡️│modzi jako kanałem aktualizacji. Zostaw kanał modów prywatny.
 
 Podgląd nazw offline uruchomisz przez **npm.cmd run plan**.
