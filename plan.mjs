@@ -35,6 +35,15 @@ export const roleMenus = [
 
 export const categories = [
   {
+    key: 'live-stats', name: 'STATYSTYKI', access: 'stats',
+    channels: [
+      { name: 'statsOnline', label: 'Online', voice: true, counter: 'online' },
+      { name: 'statsOffline', label: 'Offline', voice: true, counter: 'offline' },
+      { name: 'Statystyki', label: 'Osoby', legacyEmoji: '📊', voice: true, counter: 'total',
+        legacyCategory: 'voice', layout: 4 },
+    ],
+  },
+  {
     key: 'start', name: '📌 START', access: 'lobby',
     channels: [
       { name: 'start-tutaj', emoji: '👋', topic: 'Pierwsze kroki na serwerze.' },
@@ -70,7 +79,6 @@ export const categories = [
       { name: 'Gramy 2', emoji: '🕹️', voice: true, limit: 5 },
       { name: 'Rankedy', emoji: '🏆', voice: true, limit: 5 },
       { name: 'Chill', emoji: '🌙', voice: true },
-      { name: 'Statystyki', emoji: '📊', voice: true, access: 'stats' },
     ],
   },
   {
@@ -88,10 +96,12 @@ export const categories = [
 ];
 
 export function channelLabel(channel) {
-  return `${channel.emoji}│${channel.label ?? channel.name}`;
+  const name = channel.label ?? channel.name;
+  return channel.emoji ? `${channel.emoji}│${name}` : name;
 }
 
 export const categoryLabel = (category) => {
+  if (category.key === 'live-stats') return category.name;
   const frame = category.key === 'start' ? '╭' : category.key === 'adult' ? '╰' : '├';
   return `${frame}─ ${category.name} ─${category.key === 'adult' ? '╯' : '╮'}`;
 };

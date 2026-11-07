@@ -124,7 +124,7 @@ export async function inspect(guild, state) {
   const newChannels = channelEntries.filter(({ category, channel }) => {
     const parent = state.categories[category.key];
     const id = state.channels[channel.name];
-    const legacyParent = channel.legacyCategory && state.layout[id] !== layoutVersion
+    const legacyParent = channel.legacyCategory && state.layout[id] !== (channel.layout ?? layoutVersion)
       ? state.categories[channel.legacyCategory] : undefined;
     return checkResource(
       id, channelLabel(channel), serverChannels,
@@ -141,16 +141,18 @@ export async function inspect(guild, state) {
   const migration = [
     ...categories.map((category) => ({
       id: state.categories[category.key], label: categoryLabel(category),
-      oldLabels: legacyCategoryLabels(category), access: category.access,
+      oldLabels: legacyCategoryLabels(category), access: category.access, version: layoutVersion,
     })),
     ...channelEntries.map(({ category, channel }) => ({
       id: state.channels[channel.name], label: channelLabel(channel),
       oldLabels: legacyChannelLabels(channel), access: channel.access ?? category.access,
       adult: channel.adult,
+      counter: channel.counter,
       parentKey: channel.legacyCategory ? category.key : undefined,
       topic: channel.label ? channel.topic : undefined,
+      version: channel.layout ?? layoutVersion,
     })),
-  ].filter(({ id }) => id && state.layout[id] !== layoutVersion);
+  ].filter(({ id, version }) => id && state.layout[id] !== version);
   const oldTargets = new Set([guild.id, guild.client.user.id, ...communityStaff.map((key) => state.roles[key])]);
   for (const item of migration) {
     const current = serverChannels.get(item.id);
@@ -168,7 +170,26 @@ function legacyCategoryLabels(category) {
 
 function legacyChannelLabels(channel) {
   const emoji = channel.legacyEmoji ?? channel.emoji;
-  return [`${emoji}・${channel.name}`, `${emoji}│${channel.name}`];
+  return emoji ? [`${emoji}・${channel.name}`, `${emoji}│${channel.name}`] : [];
+}
+
+async function positionStats(guild, state) {
+  const definition = categories.find(({ key }) => key === 'live-stats');
+  const channels = await guild.channels.fetch();
+  const category = channels.get(state.categories[definition.key]);
+  if (category.position !== 0) await category.setPosition(0, { reason });
+  for (const [index, item] of definition.channels.entries()) {
+    const channel = channels.get(state.channels[item.name]);
+    if (channel.position !== index) await channel.setPosition(index, { reason });
+  }
+  const updated = await guild.channels.fetch();
+  const top = updated.get(category.id)?.position === 0;
+  const ordered = definition.channels.every(({ name }, index) => {
+    const channel = updated.get(state.channels[name]);
+    return channel?.parentId === category.id && channel.position === index;
+  });
+  if (!top || !ordered) throw new SetupError('Discord nie zapisał kolejności kategorii STATYSTYKI i liczników.');
+  console.log('STATYSTYKI są na górze. Kolejność liczników: Online, Offline, Osoby.');
 }
 
 function overwrites(guild, state, access) {
@@ -271,7 +292,7 @@ export async function applySetup(guild, journal, plan) {
       reason,
     });
     state.channels[channel.name] = created.id;
-    state.layout[created.id] = layoutVersion;
+    state.layout[created.id] = channel.layout ?? layoutVersion;
     await save();
   }
 
@@ -279,16 +300,18 @@ export async function applySetup(guild, journal, plan) {
     const current = await guild.channels.fetch(item.id, { force: true });
     const parent = item.parentKey && state.categories[item.parentKey];
     await current.edit({
-      ...(current.name !== item.label && item.oldLabels.some((label) => sameName(current.name, label)) ? { name: item.label } : {}),
+      ...(current.name !== item.label && !item.counter &&
+        item.oldLabels.some((label) => sameName(current.name, label)) ? { name: item.label } : {}),
       ...(parent && parent !== current.parentId ? { parent, lockPermissions: false } : {}),
       ...(item.topic ? { topic: item.topic } : {}),
       ...(item.adult ? { nsfw: true } : {}),
       permissionOverwrites: overwrites(guild, state, item.access),
       reason,
     });
-    state.layout[item.id] = layoutVersion;
+    state.layout[item.id] = item.version;
     await save();
   }
+  await positionStats(guild, state);
   const adultChannel = await guild.channels.fetch(state.channels.nsfw, { force: true });
   if (!adultChannel?.nsfw) {
     await adultChannel.edit({ nsfw: true, reason: 'Przywrócenie ograniczenia wiekowego w strefie 18+' });

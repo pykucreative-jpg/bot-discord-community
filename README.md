@@ -1,6 +1,6 @@
 # Centrum społeczności graczy · Bot Discord
 
-Konfigurator tworzy **20 ról, 6 kategorii i 21 kanałów**. Jest sześć pokojów do rozmów i grania oraz jeden zablokowany kanał głosowy z licznikiem. Każdy kanał ma emoji i separator, a kategorie mają ozdobne ramki. Bot publikuje karty powitania, regulaminu, weryfikacji i wyboru ról. Kanały, role i uprawnienia działają po wyłączeniu programu. Komendy, liczniki i obsługa zdarzeń wymagają uruchomionego bota.
+Konfigurator tworzy **20 ról, 7 kategorii i 23 kanały**. Jest sześć pokojów do rozmów i grania oraz trzy zablokowane kanały głosowe z licznikami. Bot publikuje karty powitania, regulaminu, weryfikacji i wyboru ról. Kanały, role i uprawnienia działają po wyłączeniu programu. Komendy, liczniki i obsługa zdarzeń wymagają uruchomionego bota.
 
 Po uruchomieniu bot sam buduje lub uzupełnia serwer, włącza brakujące reguły AutoMod, ustawia powiadomienia o boostach i sprawdza, czy panele nadal istnieją. W trakcie pracy reaguje na zdarzenia serwera i odświeża liczniki. Członkowie korzystają z przycisków i menu, a nietypowe zgłoszenia weryfikacyjne rozpatruje moderator.
 
@@ -8,10 +8,11 @@ Po uruchomieniu bot sam buduje lub uzupełnia serwer, włącza brakujące reguł
 
 | Kategoria | Zawartość |
 | --- | --- |
+| STATYSTYKI | Na samej górze, w kolejności Online, Offline i Osoby. |
 | ╭─ 📌 START ─╮ | 👋│start-tutaj, 📜│regulamin, 🛂│weryfikacja, 📣│ogloszenia, 🎭│wybierz-role |
 | ├─ 💬 SPOŁECZNOŚĆ ─╮ | 💬│ogolny, 📸│media-i-memy, 👋│witamy z podziękowaniami za boosty oraz 🌙│pozegnania. |
 | ├─ 🎮 GRY I EVENTY ─╮ | 🎮│gaming, 🤝│szukam-ekipy i 📅│wydarzenia na turnieje, konkursy i wspólne granie. |
-| ├─ 🔊 GŁOSOWE ─╮ | ☕│Pogaduchy, 🎧│Duo (2), 🎮│Gramy 1 (5), 🕹️│Gramy 2 (5), 🏆│Rankedy (5), 🌙│Chill oraz 📊│Statystyki z liczbą osób online i offline. |
+| ├─ 🔊 GŁOSOWE ─╮ | ☕│Pogaduchy, 🎧│Duo (2), 🎮│Gramy 1 (5), 🕹️│Gramy 2 (5), 🏆│Rankedy (5) i 🌙│Chill. |
 | ├─ 🔒 PRYWATNE ─╮ | Jeden kanał 🛡️│modzi. Czat, zgłoszenia, kolejka weryfikacji, logi i alerty w jednym miejscu. Dostęp mają Moderatorzy, Administratorzy i właściciel. |
 | ╰─ 🔞 STREFA 18+ ─╯ | 🔞│nsfw z natywnym oznaczeniem kanału ograniczonego wiekowo. |
 

@@ -123,15 +123,22 @@ export function createSecurity({ client, guildId, getState, logError }) {
 
   async function refreshStats(guild) {
     if (!active(guild)) return;
-    const { total, online, offline } = stats(guild);
-    const definition = channelEntries.find(({ channel }) => channel.access === 'stats').channel;
-    const id = getState().channels[definition.name];
-    if (!id) return;
-    const current = await guild.channels.fetch(id);
-    const name = `${channelLabel(definition)} • ${total} osób · ${online} online · ${offline} offline`;
-    if (current?.type === ChannelType.GuildVoice && current.name !== name) {
-      await current.setName(name, 'Aktualizacja licznika serwera');
+    const parent = getState().categories['live-stats'];
+    if (!parent) return;
+    const counts = stats(guild);
+    let renamed = false;
+    for (const { channel } of channelEntries) {
+      if (!channel.counter) continue;
+      const id = getState().channels[channel.name];
+      if (!id) continue;
+      const current = await guild.channels.fetch(id);
+      const name = `${channelLabel(channel)} - ${counts[channel.counter]}`;
+      if (current?.type === ChannelType.GuildVoice && current.parentId === parent && current.name !== name) {
+        await current.setName(name, 'Aktualizacja licznika serwera');
+        renamed = true;
+      }
     }
+    if (renamed) console.log(`Liczniki: Online - ${counts.online}, Offline - ${counts.offline}, Osoby - ${counts.total}.`);
   }
 
   async function syncPresence(guild) {
