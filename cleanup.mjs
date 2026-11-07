@@ -4,6 +4,7 @@ import { categories } from './plan.mjs';
 import { confirmCleanup } from './panels.mjs';
 import { channelEntries, inspect, SetupError } from './setup.mjs';
 import { boostSystemSettings } from './security.mjs';
+import { ticketDetails } from './tickets.mjs';
 
 export const cleanupCommand = new SlashCommandBuilder()
   .setName('serwer-porzadki').setDescription('Usuń stare kanały i kategorie po zbudowaniu nowej struktury.')
@@ -28,7 +29,7 @@ export function createCleanup() {
       ...channelEntries.map(({ channel }) => state.channels[channel.name]),
     ]);
     const channels = await guild.channels.fetch();
-    const obsolete = order([...channels.values()].filter((channel) => !kept.has(channel.id)));
+    const obsolete = order([...channels.values()].filter((channel) => !kept.has(channel.id) && !ticketDetails(channel, state)));
     const now = Date.now();
     for (const [id, pending] of confirmations) {
       if (now >= pending.expires) confirmations.delete(id);

@@ -7,9 +7,10 @@ import { clearRole, menuPrefix } from './role-panel.mjs';
 import { cleanupCommand, createCleanup } from './cleanup.mjs';
 import { controls, manualRoles, moderationButtons, panelModal, verificationButton } from './panels.mjs';
 import { boostSystemSettings, createSecurity, securityCommands } from './security.mjs';
+import { createTickets } from './tickets.mjs';
 import {
   applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
-  privateModerationChannel, SetupError, withSetupLock,
+  SetupError, withSetupLock,
 } from './setup.mjs';
 
 const snowflake = /^\d{17,20}$/;
@@ -82,9 +83,8 @@ const client = new Client({
 let journal = await loadState(guildId);
 const cleanup = createCleanup();
 const security = createSecurity({ client, guildId, getState: () => journal.state, logError });
-const recentReports = new Map();
+const tickets = createTickets({ getState: () => journal.state, log: security.log, logError });
 const changingRoles = new Set();
-const cooldownMs = 60_000;
 let building = false;
 let startupSummary = 'Bot uruchamia konfigurację.';
 const manualActions = ['ostrzez', 'timeout', 'untimeout', 'wyrzuc', 'zbanuj'];
@@ -301,29 +301,7 @@ async function usePanel(interaction, member) {
 }
 
 async function submitReport(interaction, text = interaction.options.getString('opis', true)) {
-  const description = text.trim();
-  if (description.length < 5 || description.length > 1200) {
-    throw new SetupError('Opis musi zawierać od 5 do 1200 znaków.');
-  }
-
-  const user = interaction.user.id;
-  if (recentReports.has(user)) throw new SetupError('Odczekaj minutę przed kolejnym zgłoszeniem.');
-  recentReports.set(user, true);
-  try {
-    const channel = await privateModerationChannel(interaction.guild, journal.state);
-    const message = await channel.send({
-      content: `**Prywatne zgłoszenie**\nAutor: <@${user}> (ID ${user})\nKanał: <#${interaction.channelId}>\n\n>>> ${description}`,
-      allowedMentions: { parse: [] },
-      flags: MessageFlags.SuppressEmbeds,
-      nonce: interaction.id,
-      enforceNonce: true,
-    });
-    setTimeout(() => recentReports.delete(user), cooldownMs).unref();
-    return `Zgłoszenie wysłane do moderacji. Numer: ${message.id}.`;
-  } catch (error) {
-    recentReports.delete(user);
-    throw error;
-  }
+  return tickets.open(interaction, text);
 }
 
 function logError(error) {
@@ -358,6 +336,7 @@ function loginFailure(error) {
 
 function validateControl(interaction, action) {
   const state = journal.state;
+  if (action === 'ticket-close' && state.securityReady && interaction.message?.author?.id === interaction.client.user.id) return;
   const publicPanel = ['report', 'send-report'].includes(action);
   const key = publicPanel ? 'start-tutaj' : 'mod-log';
   const mainPanel = publicPanel || ['status', 'announce', 'publish', 'moderate',
@@ -381,6 +360,7 @@ async function useControl(interaction, action, key, id) {
   if (action === 'send-report' && interaction.isModalSubmit()) {
     return submitReport(interaction, interaction.fields.getTextInputValue('opis'));
   }
+  if (action === 'ticket-close' && interaction.isButton()) return tickets.close(interaction, member);
   if (action === 'status') return startupSummary + '\n\n' + security.statisticsReply(interaction.guild);
   if (action === 'publish' && interaction.isModalSubmit()) {
     return announce(interaction, member, key, interaction.fields.getTextInputValue('tytul'),

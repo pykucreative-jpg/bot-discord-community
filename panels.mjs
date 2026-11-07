@@ -39,6 +39,10 @@ export function confirmMessageClear(token) {
   return row(button('confirm-clear:' + token, 'Usuń wiadomości z podglądu', ButtonStyle.Danger));
 }
 
+export function ticketCloseButton() {
+  return row(button('ticket-close', 'Zamknij zgłoszenie'));
+}
+
 export function reviewButtons(id) {
   return row(button('approve-queue:' + id, 'Zatwierdź dostęp', ButtonStyle.Success),
     button('hold-queue:' + id, 'Wstrzymaj dostęp', ButtonStyle.Danger));

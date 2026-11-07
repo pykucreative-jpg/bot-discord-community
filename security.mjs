@@ -5,6 +5,7 @@ import {
 } from 'discord.js';
 import { channelLabel } from './plan.mjs';
 import { confirmMessageClear, reviewButtons } from './panels.mjs';
+import { lockTicketChannel } from './tickets.mjs';
 import {
   channelEntries, isStatsChannel, lockReadOnlyChannel, lockStatsChannel, privateModerationChannel, SetupError,
 } from './setup.mjs';
@@ -465,6 +466,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
       return;
     }
     await lockReadOnlyChannel(channel, getState());
+    await lockTicketChannel(channel, getState());
     if (channel.id !== getState().channels.nsfw || channel.type !== ChannelType.GuildText || channel.nsfw) return;
     await channel.edit({ nsfw: true, reason: 'Przywrócenie ograniczenia wiekowego w strefie 18+' });
     await log(channel.guild, '🔞 Przywrócono ograniczenie wiekowe', `Kanał: <#${channel.id}>`, 0xE85D75);
