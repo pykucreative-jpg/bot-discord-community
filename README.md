@@ -16,7 +16,7 @@ Po uruchomieniu bot sam buduje lub uzupełnia serwer, włącza brakujące reguł
 | ├─ 🔒 PRYWATNE ─╮ | 🛡️│modzi na rozmowy, zgłoszenia i kolejkę weryfikacji. 📋│logi-bota to osobny kanał na zdarzenia i alerty, do odczytu dla moderacji. |
 | ╰─ 🔞 STREFA 18+ ─╯ | 🔞│nsfw z natywnym oznaczeniem kanału ograniczonego wiekowo. |
 
-Przed weryfikacją nowi członkowie widzą w utworzonej strukturze powitanie oraz wspólny kanał regulaminu i weryfikacji. Po kliknięciu **Akceptuję regulamin** dostają rolę **Zweryfikowany**, która odblokowuje kanały członkowskie. Konto młodsze niż 7 dni lub weryfikacja podczas wykrytej fali dołączeń trafia do kolejki moderacji. Fala to co najmniej 6 dołączeń osób w 20 sekund. Wykrycie włącza ręczną ocenę na 10 minut. Zgłoszenie w kolejce zostaje oznaczone osobną rolą także po restarcie.
+Przed weryfikacją nowi członkowie widzą w utworzonej strukturze powitanie oraz wspólny kanał regulaminu i weryfikacji. Po kliknięciu **Akceptuję regulamin** dostają rolę **Zweryfikowany**, która odblokowuje kanały członkowskie. Konto młodsze niż 7 dni lub weryfikacja podczas wykrytej fali dołączeń trafia do kolejki moderacji. Fala to co najmniej 6 różnych osób lub 3 konta młodsze niż 7 dni w ciągu 20 sekund. Wykrycie włącza ręczną ocenę na 10 minut. Zgłoszenie w kolejce zostaje oznaczone osobną rolą także po restarcie.
 
 W 🎭│wybierz-role są trzy menu. **Płeć** obejmuje Kobietę, Mężczyznę i Osobę niebinarną. **Wiek** obejmuje 13–17, 18–24, 25–34 i 35+. W **zainteresowaniach** są Gaming, Muzyka, Technologia i Powiadomienia o wydarzeniach. Płeć i wiek są dobrowolne, widoczne w profilu serwerowym i usuwalne opcją **Bez roli**. Role z menu są deklaracjami. Dostęp do treści 18+ dodatkowo sprawdza sam Discord za pomocą [ograniczenia wieku kanału](https://support.discord.com/hc/en-us/articles/115000084051-Age-Restricted-Channels-and-Content).
 
@@ -61,7 +61,7 @@ Jeśli bot wcześniej budował ten sam serwer lokalnie, przed pierwszym startem 
 | 📜│regulamin-i-weryfikacja | **Akceptuję regulamin** uruchamia automatyczną ocenę konta. |
 | 🎭│wybierz-role | Menu nadają i zdejmują role społecznościowe. |
 | 🛡️│modzi, karta zgłoszenia weryfikacyjnego | **Zatwierdź dostęp** lub **Wstrzymaj dostęp**. |
-| 🛡️│modzi, panel moderatorów | Stan serwera, formularze ogłoszeń i wydarzeń oraz wybór osoby do ostrzeżenia, timeoutu, wyrzucenia, bana lub zmiany weryfikacji. Są też formularze odbanowania i czyszczenia wiadomości. Właściciel może zmieniać rangi. |
+| 🛡️│modzi, panel moderatorów | Stan serwera, formularze ogłoszeń i wydarzeń oraz wybór osoby do ostrzeżenia, timeoutu, wyrzucenia, bana lub zmiany weryfikacji. Są też formularze odbanowania i czyszczenia wiadomości. Czyszczenie pokazuje prywatny podgląd maksymalnie 100 ostatnich wiadomości i wymaga potwierdzenia. Pomija przypięte wiadomości, panele i treści starsze niż 14 dni. Właściciel może zmieniać rangi. |
 
 ## Opcjonalne komendy
 
@@ -90,7 +90,7 @@ Komendy zaczynające się od /serwer- są przeznaczone dla właściciela. Modera
 ## Ochrona, logi i statystyki
 
 - **Spam i naloty.** AutoMod Discorda blokuje spam i wiadomości zawierające więcej niż 5 unikalnych oznaczeń, jeżeli reguły zostały dodane. Alerty trafiają do 📋│logi-bota. Niezależnie od AutoMod bot wykrywa 8 wiadomości w 8 sekund i stosuje 2 minuty ograniczenia pisania wobec kont, które może moderować. Sygnały podejrzanego konta oznaczają skierowanie do człowieka.
-- **Logi serwera.** Dołączenia, wyjścia, przejścia między kanałami głosowymi, weryfikacje, decyzje, akcje moderacyjne i wybrane zdarzenia audytu Discorda, takie jak zmiany ról, kanałów, zaproszeń i banów. Karty zdarzeń, ostrzeżenia i alarmy trafiają do 📋│logi-bota.
+- **Logi serwera.** Dołączenia z wiekiem konta i datą jego utworzenia, wyjścia, wejścia i wyjścia z kanałów głosowych, przejścia między kanałami głosowymi, weryfikacje, decyzje, akcje moderacyjne i wybrane zdarzenia audytu Discorda, takie jak zmiany ról, kanałów, zaproszeń i banów. Karty zdarzeń, ostrzeżenia i alarmy trafiają do 📋│logi-bota.
 - **Logi wiadomości.** Edycje, usunięcia i zbiorcze usunięcia w nowych kanałach i ich wątkach. Log zawiera metadane, bez kopii tekstu. Po wyczyszczeniu pamięci podręcznej Discord może dostarczyć zdarzenie bez danych autora.
 - **Liczniki.** Razem obejmuje ludzi i boty. Online łączy dostępnych, bezczynnych i „Nie przeszkadzać”. Konta niewidoczne liczą się jako offline. Po restarcie liczby mogą się wyrównywać podczas pobierania statusów. Liczniki odświeżają się co 15 minut, żeby zmieścić się w limitach zmiany nazw.
 - **Boosty.** Bot dziękuje po otrzymaniu zdarzenia systemowego boosta. Jeśli powiadomienia systemowe są wyłączone, może wykryć pierwszy boost danego członka przez zmianę jego statusu. Aby otrzymywać zdarzenia kolejnych boostów, użyj /serwer-boosty. Discord może wyświetlić również własną systemową wiadomość.

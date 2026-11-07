@@ -35,6 +35,10 @@ export function confirmCleanup(code) {
   return row(button('delete:' + code, 'Trwale usuń kanały z podglądu', ButtonStyle.Danger));
 }
 
+export function confirmMessageClear(token) {
+  return row(button('confirm-clear:' + token, 'Usuń wiadomości z podglądu', ButtonStyle.Danger));
+}
+
 export function reviewButtons(id) {
   return row(button('approve-queue:' + id, 'Zatwierdź dostęp', ButtonStyle.Success),
     button('hold-queue:' + id, 'Wstrzymaj dostęp', ButtonStyle.Danger));
@@ -83,8 +87,8 @@ export function panelModal(action, key, id) {
         input('powod', 'Powód decyzji', 3, 300, TextInputStyle.Paragraph));
   }
   if (action === 'clear-channel') {
-    return modal.setCustomId(controls + 'clear:' + key).setTitle('Potwierdź usunięcie wiadomości')
-      .addLabelComponents(input('liczba', 'Ile ostatnich wiadomości usunąć (1–100)?', 1, 3));
+    return modal.setCustomId(controls + 'clear:' + key).setTitle('Podgląd czyszczenia wiadomości')
+      .addLabelComponents(input('liczba', 'Ile ostatnich wiadomości sprawdzić (1–100)?', 1, 3));
   }
   modal.setCustomId(controls + 'apply:' + key + ':' + id).setTitle('Potwierdź decyzję moderatora')
     .addLabelComponents(input('powod', 'Powód decyzji', 3, 300, TextInputStyle.Paragraph));

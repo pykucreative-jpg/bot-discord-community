@@ -1,14 +1,18 @@
+import { randomUUID } from 'node:crypto';
 import {
   AuditLogEvent, ChannelType, EmbedBuilder, Events, MessageType, PermissionFlagsBits,
   SlashCommandBuilder, SystemChannelFlagsBitField, escapeMarkdown,
 } from 'discord.js';
 import { channelLabel } from './plan.mjs';
-import { reviewButtons } from './panels.mjs';
+import { confirmMessageClear, reviewButtons } from './panels.mjs';
 import {
   channelEntries, isStatsChannel, lockReadOnlyChannel, lockStatsChannel, privateModerationChannel, SetupError,
 } from './setup.mjs';
 
 const DAY = 86_400_000;
+const newAccountAge = 7 * DAY;
+const messageAgeLimit = 14 * DAY;
+const clearPreviewDuration = 5 * 60_000;
 const NO_MENTIONS = { parse: [] };
 const AUDIT_EVENTS = new Set([
   'GuildUpdate', 'ChannelCreate', 'ChannelUpdate', 'ChannelDelete', 'ChannelOverwriteCreate',
@@ -67,6 +71,15 @@ function detail(value) {
   return escapeMarkdown(String(value ?? 'brak').slice(0, 350));
 }
 
+function accountAge(user, now) {
+  const age = Math.max(0, now - user.createdTimestamp);
+  const days = Math.floor(age / DAY);
+  const hours = Math.floor((age % DAY) / 3_600_000);
+  const minutes = Math.floor((age % 3_600_000) / 60_000);
+  if (days) return `${days} ${days === 1 ? 'dzień' : 'dni'} i ${hours} godz.`;
+  return hours ? `${hours} godz. i ${minutes} min` : `${minutes} min`;
+}
+
 function card(title, description, color = 0x5865F2) {
   return new EmbedBuilder().setTitle(title).setDescription(description).setColor(color)
     .setTimestamp().setFooter({ text: 'CENTRUM SPOŁECZNOŚCI' });
@@ -79,7 +92,8 @@ function auditReason(interaction, reason) {
 export function createSecurity({ client, guildId, getState, logError }) {
   const locks = new Set();
   const rates = new Map();
-  const joins = [];
+  const pendingClears = new Map();
+  const joins = new Map();
   let raidUntil = 0;
 
   function on(event, handler) {
@@ -206,7 +220,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
       if (has(gate.blocked)) throw new SetupError('Twoja weryfikacja została wstrzymana. Skontaktuj się z moderacją.');
       if (has(gate.verified)) return 'Masz już dostęp do społeczności.';
       if (has(gate.review)) return 'Twoje zgłoszenie czeka na decyzję moderacji.';
-      const accountIsNew = Date.now() - member.user.createdTimestamp < 7 * DAY;
+      const accountIsNew = Date.now() - member.user.createdTimestamp < newAccountAge;
       const raidActive = Date.now() < raidUntil;
       if (accountIsNew || raidActive) {
         const queue = await privateModerationChannel(guild, state);
@@ -290,15 +304,11 @@ export function createSecurity({ client, guildId, getState, logError }) {
     if (!active(guild)) throw new SetupError('Najpierw ukończ konfigurację serwera.');
     if (action === 'wyczysc') {
       const channel = panel ? await guild.channels.fetch(panel.channelId, { force: true }) : interaction.channel;
-      if (channel?.type !== ChannelType.GuildText) throw new SetupError('Wybierz kanał tekstowy.');
-      if (!channel.permissionsFor(actor)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageMessages])) {
-        throw new SetupError('Brakuje Ci uprawnień do czyszczenia tego kanału.');
-      }
+      requireClearAccess(channel, actor);
       const count = panel?.count ?? interaction.options.getInteger('liczba', true);
       if (!Number.isInteger(count) || count < 1 || count > 100) throw new SetupError('Podaj liczbę od 1 do 100.');
       const removed = await channel.bulkDelete(count, true);
-      await log(guild, '🧹 Czyszczenie wiadomości',
-        `Kanał: <#${channel.id}>\nModerator: ${label(actor.user)}\nUsunięto: ${removed.size}`);
+      await logClear(guild, channel.id, actor, removed.size);
       return `Usunięto ${removed.size} wiadomości. Discord pomija wiadomości starsze niż 14 dni.`;
     }
     const permissions = { wyrzuc: PermissionFlagsBits.KickMembers, zbanuj: PermissionFlagsBits.BanMembers,
@@ -340,25 +350,84 @@ export function createSecurity({ client, guildId, getState, logError }) {
     return 'Akcja moderacyjna wykonana.';
   }
 
+  function requireClearAccess(channel, actor) {
+    if (channel?.type !== ChannelType.GuildText) throw new SetupError('Wybierz kanał tekstowy.');
+    if (!channel.permissionsFor(actor)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageMessages])) {
+      throw new SetupError('Brakuje Ci uprawnień do czyszczenia tego kanału.');
+    }
+  }
+
+  function logClear(guild, channelId, actor, count) {
+    return log(guild, '🧹 Czyszczenie wiadomości',
+      `Kanał: <#${channelId}>\nModerator: ${label(actor.user)}\nUsunięto: ${count}`);
+  }
+
+  async function clearCandidates(channel, limit) {
+    const protectedIds = new Set(Object.values(getState().messages));
+    const now = Date.now();
+    const messages = await channel.messages.fetch({ limit });
+    return messages.filter((message) => !message.pinned && message.deletable && !protectedIds.has(message.id) &&
+      now - message.createdTimestamp < messageAgeLimit);
+  }
+
+  async function previewClear(guild, actor, channelId, count) {
+    if (!active(guild)) throw new SetupError('Najpierw ukończ konfigurację serwera.');
+    if (!Number.isInteger(count) || count < 1 || count > 100) throw new SetupError('Podaj liczbę od 1 do 100.');
+    const channel = await guild.channels.fetch(channelId, { force: true });
+    requireClearAccess(channel, actor);
+    const candidates = await clearCandidates(channel, count);
+    pendingClears.delete(actor.id);
+    if (!candidates.size) return 'W tym zakresie nie ma wiadomości do usunięcia.';
+    const token = randomUUID();
+    pendingClears.set(actor.id, { token, channelId, ids: [...candidates.keys()], expires: Date.now() + clearPreviewDuration });
+    return {
+      content: `**Do usunięcia: ${candidates.size} wiadomości z <#${channelId}>.** Pominięto przypięte wiadomości, panele bota i wiadomości starsze niż 14 dni. Potwierdzenie wygasa po 5 minutach.`,
+      components: [confirmMessageClear(token)],
+    };
+  }
+
+  async function confirmClear(guild, actor, token) {
+    if (!active(guild)) throw new SetupError('Najpierw ukończ konfigurację serwera.');
+    const preview = pendingClears.get(actor.id);
+    if (!preview || preview.token !== token || Date.now() >= preview.expires) {
+      throw new SetupError('Podgląd wygasł lub został zastąpiony. Utwórz nowy.');
+    }
+    pendingClears.delete(actor.id);
+    const channel = await guild.channels.fetch(preview.channelId, { force: true });
+    requireClearAccess(channel, actor);
+    const available = await clearCandidates(channel, 100);
+    const ids = preview.ids.filter((id) => available.has(id));
+    if (!ids.length) return 'Wiadomości z podglądu nie są już dostępne do usunięcia.';
+    const removed = await channel.bulkDelete(ids, true);
+    await logClear(guild, channel.id, actor, removed.size);
+    return `Usunięto ${removed.size} wiadomości z <#${channel.id}>.`;
+  }
+
   const boost = (guild, user) => post(guild, 'witamy', card('💎 Dziękujemy za boost!',
     `<@${user.id}> właśnie wsparł serwer. Dzięki za pomoc w rozwijaniu społeczności! 💜`, 0xDA75D5));
 
   on(Events.GuildMemberAdd, async (member) => {
     const { guild, user } = member;
     if (!active(guild)) return;
+    const now = Date.now();
+    const accountIsNew = now - user.createdTimestamp < newAccountAge;
     if (!user.bot) {
-      const now = Date.now();
-      while (joins.length && now - joins[0] > 20_000) joins.shift();
-      joins.push(now);
-      const alert = joins.length >= 6 && now >= raidUntil;
-      if (joins.length >= 6) raidUntil = now + 10 * 60_000;
-      if (alert) await log(guild, '🚨 Wykryto falę dołączeń',
-        'Co najmniej 6 osób dołączyło w 20 sekund. Nowe weryfikacje trafiają do ręcznej oceny.', 0xE85D75);
+      for (const [id, joined] of joins) if (now - joined.at > 20_000) joins.delete(id);
+      joins.set(user.id, { at: now, fresh: accountIsNew });
+      const freshCount = [...joins.values()].filter(({ fresh }) => fresh).length;
+      if (joins.size >= 6 || freshCount >= 3) {
+        const alert = now >= raidUntil;
+        raidUntil = now + 10 * 60_000;
+        if (alert) await log(guild, '🚨 Wykryto falę dołączeń',
+          `W ciągu 20 sekund dołączyło ${joins.size} różnych osób, w tym ${freshCount} z kontem młodszym niż 7 dni. Ręczna ocena weryfikacji przez 10 minut.`, 0xE85D75);
+      }
       const welcome = await post(guild, 'witamy', card('👋 Witaj w Centrum Graczy!',
         `Hej <@${user.id}>! Fajnie, że do nas dołączasz. Przeczytaj i zaakceptuj zasady w <#${getState().channels.regulamin}>, żeby odblokować serwer. Do zobaczenia w grze! 🎮`, 0x2CA58D));
       if (welcome) console.log('Wysłano automatyczne powitanie w kanale witamy.');
     }
-    await log(guild, '📥 Dołączenie', `${label(user)}\nKonto utworzone <t:${Math.floor(user.createdTimestamp / 1000)}:R>.`);
+    const createdAt = Math.floor(user.createdTimestamp / 1000);
+    await log(guild, '📥 Wejście na serwer',
+      `${label(user)}\nWiek konta: **${accountAge(user, now)}**\nUtworzone: <t:${createdAt}:F> (<t:${createdAt}:R>).\nLiczba kont na serwerze: **${guild.memberCount}**.${!user.bot && accountIsNew ? '\n⚠️ Nowe konto. Weryfikacja wymaga decyzji moderatora.' : ''}`);
   });
   on(Events.GuildMemberRemove, async (member) => {
     if (!active(member.guild)) return;
@@ -384,7 +453,9 @@ export function createSecurity({ client, guildId, getState, logError }) {
         (!tracked(before.channel) && !tracked(after.channel))) return;
     const from = before.channelId ? `<#${before.channelId}>` : 'poza głosowymi';
     const to = after.channelId ? `<#${after.channelId}>` : 'poza głosowymi';
-    await log(guild, '🔊 Zmiana kanału głosowego', `${label(member.user)}\n${from} → ${to}`);
+    const title = !before.channelId ? '🔊 Wejście na kanał głosowy'
+      : !after.channelId ? '🔇 Wyjście z kanału głosowego' : '🔀 Przejście między kanałami głosowymi';
+    await log(guild, title, `${label(member.user)}\n${from} → ${to}`);
   });
 
   on(Events.ChannelUpdate, async (_before, channel) => {
@@ -447,6 +518,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
   setInterval(() => {
     const now = Date.now();
     for (const [user, history] of rates) if (now - history.at(-1) > 8_000) rates.delete(user);
+    for (const [user, preview] of pendingClears) if (now >= preview.expires) pendingClears.delete(user);
   }, 30_000).unref();
   setInterval(() => {
     const guild = client.guilds.cache.get(guildId);
@@ -458,5 +530,6 @@ export function createSecurity({ client, guildId, getState, logError }) {
     return `**📊 Statystyki serwera**\n👥 Razem: **${total}**\n🟢 Online: **${online}**\n⚫ Offline: **${offline}**`;
   }
 
-  return { accept, gateRoles, isVerified, log, moderate, refreshStats, review, statisticsReply, syncPresence };
+  return { accept, confirmClear, gateRoles, isVerified, log, moderate, previewClear, refreshStats, review,
+    statisticsReply, syncPresence };
 }

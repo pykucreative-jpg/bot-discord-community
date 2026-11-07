@@ -391,8 +391,10 @@ async function useControl(interaction, action, key, id) {
       id: interaction.fields.getTextInputValue('id'), reason: interaction.fields.getTextInputValue('powod') });
   }
   if (action === 'clear' && interaction.isModalSubmit() && snowflake.test(key)) {
-    return security.moderate(interaction, member, { action: 'wyczysc', channelId: key,
-      count: Number(interaction.fields.getTextInputValue('liczba').trim()) });
+    return security.previewClear(interaction.guild, member, key, Number(interaction.fields.getTextInputValue('liczba').trim()));
+  }
+  if (action === 'confirm-clear' && interaction.isButton()) {
+    return security.confirmClear(interaction.guild, member, key);
   }
   if (action === 'moderate' && interaction.isUserSelectMenu()) {
     if (!member.permissions.has(PermissionFlagsBits.ManageMessages)) {
