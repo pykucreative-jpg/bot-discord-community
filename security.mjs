@@ -120,8 +120,8 @@ export function createSecurity({ client, guildId, getState, logError }) {
     const state = getState();
     if (!active(guild) || !state.channels[name]) return;
     try {
-      const channel = ['mod-log', 'logi-bota'].includes(name)
-        ? await privateModerationChannel(guild, state, { force: false, name })
+      const channel = name === 'logi-bota'
+        ? await privateModerationChannel(guild, state, { force: false })
         : await guild.channels.fetch(state.channels[name]);
       if (channel?.type === ChannelType.GuildText) return await channel.send({ embeds: [embed], allowedMentions: NO_MENTIONS });
     } catch (error) {

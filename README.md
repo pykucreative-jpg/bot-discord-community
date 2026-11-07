@@ -13,7 +13,7 @@ Po uruchomieniu bot sam buduje lub uzupełnia serwer, włącza brakujące reguł
 | ├─ 💬 SPOŁECZNOŚĆ ─╮ | 💬│ogolny, 📸│media-i-memy, 👋│witamy z podziękowaniami za boosty oraz 🌙│pozegnania. |
 | ├─ 🎮 GRY I EVENTY ─╮ | 🎮│gaming, 🤝│szukam-ekipy i 📅│wydarzenia na turnieje, konkursy i wspólne granie. |
 | ├─ 🔊 GŁOSOWE ─╮ | ☕│Pogaduchy, 🎧│Duo (2), 🎮│Gramy 1 (5), 🕹️│Gramy 2 (5), 🏆│Rankedy (5) i 🌙│Chill. |
-| ├─ 🔒 PRYWATNE ─╮ | 🛡️│modzi na rozmowy i kolejkę weryfikacji. 📋│logi-bota to osobny kanał na zdarzenia, alerty i powiadomienia o nowych ticketach, do odczytu dla moderacji. |
+| ├─ 🔒 PRYWATNE ─╮ | 🛡️│modzi to czat moderatorów. 📋│logi-bota to osobny kanał na zdarzenia, alerty, powiadomienia o ticketach, kolejkę weryfikacji i panel moderatorów, do odczytu dla moderacji. |
 | ╰─ 🔞 STREFA 18+ ─╯ | 🔞│nsfw z natywnym oznaczeniem kanału ograniczonego wiekowo. |
 
 Przed weryfikacją nowi członkowie widzą w utworzonej strukturze powitanie oraz wspólny kanał regulaminu i weryfikacji. Po kliknięciu **Akceptuję regulamin** dostają rolę **Zweryfikowany**, która odblokowuje kanały członkowskie. Konto młodsze niż 7 dni lub weryfikacja podczas wykrytej fali dołączeń trafia do kolejki moderacji. Fala to co najmniej 6 różnych osób lub 3 konta młodsze niż 7 dni w ciągu 20 sekund. Wykrycie włącza ręczną ocenę na 10 minut. Zgłoszenie w kolejce zostaje oznaczone osobną rolą także po restarcie.
@@ -42,7 +42,7 @@ Rangi ekipy to **Administrator**, **Moderator**, **Pomocnik** i **Organizator**.
 
        npm.cmd start
 
-5. Poczekaj na komunikat „Gotowe” w terminalu. Bot utworzy strukturę, opublikuje karty i spróbuje włączyć reguły AutoMod. Otwórz 👋│start-tutaj, by zobaczyć panel członkowski, oraz 🛡️│modzi, by zobaczyć panel moderatorów. Bot przypina panel moderatorów, jeśli ma uprawnienie do przypinania wiadomości.
+5. Poczekaj na komunikat „Gotowe” w terminalu. Bot utworzy strukturę, opublikuje karty i spróbuje włączyć reguły AutoMod. Otwórz 👋│start-tutaj, by zobaczyć panel członkowski, oraz 📋│logi-bota, by zobaczyć panel moderatorów. Bot przypina panel moderatorów, jeśli ma uprawnienie do przypinania wiadomości.
 6. Jeśli zastępujesz wcześniejszy układ, jako właściciel użyj **/serwer-porzadki podglad**. Sprawdź listę w prywatnym załączniku, a następnie potwierdź komendą **/serwer-porzadki usun** z kodem. Potwierdzenie jest przypisane do osoby, która otworzyła podgląd, i wygasa po 5 minutach. Usunięcie kanału usuwa jego historię, wątki i posty na forum. Jeśli lista się zmieni, bot poprosi o nowy podgląd. Jeżeli Discord zatrzyma operację na chronionym kanale, odpowiedź poda liczbę już usuniętych elementów.
 
 Opcjonalnie ustaw `DISCORD_CLEANUP_ROLE_ID` na identyfikator istniejącej roli uprawnionej do sprzątania. Jej posiadacze mogą użyć /serwer-porzadki na kanale, na którym mają dostęp do komend. Bot sprawdza rolę przy podglądzie i przy potwierdzeniu. Delegacja obejmuje wyłącznie sprzątanie przez bota. Czyszczenie dotyczy kanałów i kategorii, a role pozostają na serwerze. Opcjonalna zmienna `DISCORD_CLEANUP_ROLE_NAME` zmienia nazwę wskazanej roli, jeśli bot ma uprawnienia do jej edycji.
@@ -60,8 +60,8 @@ Jeśli bot wcześniej budował ten sam serwer lokalnie, przed pierwszym startem 
 | 👋│start-tutaj | **Zgłoś sprawę** otwiera formularz. Po wysłaniu powstaje prywatny kanał do rozmowy z moderacją. |
 | 📜│regulamin-i-weryfikacja | **Akceptuję regulamin** uruchamia automatyczną ocenę konta. |
 | 🎭│wybierz-role | Menu nadają i zdejmują role społecznościowe. |
-| 🛡️│modzi, karta zgłoszenia weryfikacyjnego | **Zatwierdź dostęp** lub **Wstrzymaj dostęp**. |
-| 🛡️│modzi, panel moderatorów | Stan serwera, formularze ogłoszeń i wydarzeń oraz wybór osoby do ostrzeżenia, timeoutu, wyrzucenia, bana lub zmiany weryfikacji. Są też formularze odbanowania i czyszczenia wiadomości. Czyszczenie pokazuje prywatny podgląd maksymalnie 100 ostatnich wiadomości i wymaga potwierdzenia. Pomija przypięte wiadomości, panele i treści starsze niż 14 dni. Właściciel może zmieniać rangi. |
+| 📋│logi-bota, karta zgłoszenia weryfikacyjnego | **Zatwierdź dostęp** lub **Wstrzymaj dostęp**. |
+| 📋│logi-bota, panel moderatorów | Stan serwera, formularze ogłoszeń i wydarzeń oraz wybór osoby do ostrzeżenia, timeoutu, wyrzucenia, bana lub zmiany weryfikacji. Są też formularze odbanowania i czyszczenia wiadomości. Czyszczenie pokazuje prywatny podgląd maksymalnie 100 ostatnich wiadomości i wymaga potwierdzenia. Pomija przypięte wiadomości, panele i treści starsze niż 14 dni. Właściciel może zmieniać rangi. |
 
 Każdy użytkownik może mieć jeden otwarty ticket. Przycisk **Zamknij zgłoszenie** może użyć autor lub moderacja. Po zamknięciu rozmowa jest dostępna do odczytu.
 

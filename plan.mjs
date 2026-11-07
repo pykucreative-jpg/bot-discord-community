@@ -84,9 +84,9 @@ export const categories = [
   {
     key: 'moderation', name: '🔒 PRYWATNE', legacyName: '🛡️ MODERACJA', access: 'mods',
     channels: [
-      { name: 'mod-log', label: 'modzi', emoji: '🛡️', legacyEmoji: '📋', layout: 4,
-        topic: 'Czat moderatorów, zgłoszenia i ocena kont.' },
-      { name: 'logi-bota', emoji: '📋', topic: 'Zdarzenia serwera, działania moderacji i alerty AutoMod.', access: 'logs' },
+      { name: 'mod-log', label: 'modzi', emoji: '🛡️', legacyEmoji: '📋', layout: 5,
+        topic: 'Prywatny czat moderatorów.' },
+      { name: 'logi-bota', emoji: '📋', topic: 'Logi, alerty i panel moderatorów.', access: 'logs' },
     ],
   },
   {
@@ -134,9 +134,9 @@ export const starterMessages = {
     'Role widać na profilu serwerowym. Podawaj tylko informacje, którymi chcesz się dzielić.',
     'W ostatnim menu wybierz wszystkie zainteresowania, które chcesz zachować, albo wybierz samo **Bez roli**.',
   ].join('\n'),
-  'mod-log': () => [
+  'logi-bota': () => [
     '🛡️ Panel moderatorów',
-    'Tutaj trafiają prywatne zgłoszenia i konta do oceny.',
+    'Tutaj trafiają powiadomienia o ticketach i konta do oceny.',
     'Przyciski pod zgłoszeniem pozwalają zatwierdzić lub wstrzymać dostęp. Z menu poniżej wybierzesz osobę do moderacji.',
   ].join('\n\n'),
 };

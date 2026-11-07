@@ -428,13 +428,13 @@ export async function applySetup(guild, journal, plan) {
     const [title, ...lines] = render((key) => `<#${state.channels[key]}>`).split('\n');
     const description = lines.join('\n');
     const colors = { 'start-tutaj': 0x5865F2, regulamin: 0x2CA58D, 'wybierz-role': 0xA76DEC,
-      'mod-log': 0x5865F2 };
+      'logi-bota': 0x5865F2 };
     const embed = new EmbedBuilder()
       .setTitle(title).setDescription(description).setColor(colors[name])
       .setFooter({ text: 'CENTRUM SPOŁECZNOŚCI' });
     const components = name === 'wybierz-role' ? makeRolePanel() : [];
     if (name === 'start-tutaj') components.push(communityButtons());
-    if (name === 'mod-log') components.push(...staffButtons());
+    if (name === 'logi-bota') components.push(...staffButtons());
     if (name === 'regulamin') {
       components.push(new ActionRowBuilder().addComponents(new ButtonBuilder()
         .setCustomId(verificationButton).setLabel('Akceptuję regulamin').setStyle(ButtonStyle.Success)));
@@ -460,6 +460,22 @@ export async function applySetup(guild, journal, plan) {
     await pinStaffPanel(name, posted);
     if (!previous) messages++;
   }
+  if (state.messages['mod-log'] && !state.retiredStaffPanel) {
+    const oldChannel = currentChannels.get(state.channels['mod-log']);
+    try {
+      const oldPanel = await oldChannel?.messages.fetch({ message: state.messages['mod-log'], force: true });
+      if (oldPanel?.author.id === guild.client.user.id) {
+        await oldPanel.edit({
+          content: `Panel moderatorów jest teraz w <#${state.channels['logi-bota']}>.`,
+          embeds: [], components: [], allowedMentions: { parse: [] },
+        });
+      }
+    } catch (error) {
+      if (error.code !== RESTJSONErrorCodes.UnknownMessage && error.code !== RESTJSONErrorCodes.UnknownChannel) throw error;
+    }
+    state.retiredStaffPanel = true;
+    await save();
+  }
   const oldVerificationId = state.channels.weryfikacja;
   if (oldVerificationId && state.layout[oldVerificationId] !== 'retired') {
     const retired = currentChannels.get(oldVerificationId);
@@ -477,14 +493,14 @@ export async function applySetup(guild, journal, plan) {
 }
 
 async function pinStaffPanel(name, message) {
-  if (name === 'mod-log' && message.pinnable && !message.pinned) {
+  if (name === 'logi-bota' && message.pinnable && !message.pinned) {
     await message.pin('Przypięcie panelu moderatorów').catch((error) => {
       console.error('Nie udało się przypiąć panelu moderatorów:', error.code ?? error.name);
     });
   }
 }
 
-export async function privateModerationChannel(guild, state, { force = true, name = 'mod-log' } = {}) {
+export async function privateModerationChannel(guild, state, { force = true, name = 'logi-bota' } = {}) {
   const id = state.channels[name];
   if (!id || !state.roles.mod || !state.roles.admin) {
     throw new SetupError('Najpierw ukończ konfigurację serwera.');
