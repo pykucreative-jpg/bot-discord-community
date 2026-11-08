@@ -105,7 +105,7 @@ function checkResource(id, name, collection, valid, conflicts) {
   return true;
 }
 
-export async function inspect(guild, state) {
+export async function inspect(guild, state, categoryScope) {
   const [serverRoles, serverChannels, bot] = await Promise.all([
     guild.roles.fetch(),
     guild.channels.fetch(),
@@ -114,18 +114,23 @@ export async function inspect(guild, state) {
   const missing = bot.permissions.missing(botPermissions);
   if (missing.length) throw new SetupError(`Brak uprawnień bota: ${missing.join(', ')}.`);
 
-  const newRoles = roles.filter(({ key, name }) => checkResource(
+  const scopedCategories = categoryScope ? categories.filter(({ key }) => key === categoryScope) : categories;
+  const scopedChannels = categoryScope ? channelEntries.filter(({ category }) => category.key === categoryScope) : channelEntries;
+  if (categoryScope && moderators.some((key) => !serverRoles.has(state.roles[key]))) {
+    throw new SetupError('Do prywatnych logów potrzebne są istniejące role Moderator i Administrator.');
+  }
+  const newRoles = categoryScope ? [] : roles.filter(({ key, name }) => checkResource(
     state.roles[key], name, serverRoles,
     (role) => role && !role.managed,
     (role) => sameName(role.name, name),
   ));
-  const newCategories = categories.filter((category) => checkResource(
+  const newCategories = scopedCategories.filter((category) => checkResource(
     state.categories[category.key], categoryLabel(category), serverChannels,
     (channel) => channel?.type === ChannelType.GuildCategory,
     (channel) => channel.type === ChannelType.GuildCategory &&
       [category.name, categoryLabel(category), ...legacyCategoryLabels(category)].some((name) => sameName(channel.name, name)),
   ));
-  const newChannels = channelEntries.filter(({ category, channel }) => {
+  const newChannels = scopedChannels.filter(({ category, channel }) => {
     const parent = state.categories[category.key];
     const id = state.channels[channel.name];
     const legacyParent = channel.legacyCategory && state.layout[id] !== (channel.layout ?? layoutVersion)
@@ -138,16 +143,17 @@ export async function inspect(guild, state) {
         [channel.name, ...legacyChannelLabels(channel), channelLabel(channel)].some((name) => sameName(current.name, name)),
     );
   });
-  if ((!state.ordered || newRoles.length) && roles.some(({ key }) => state.roles[key] && !serverRoles.get(state.roles[key]).editable)) {
+  if (!categoryScope && (!state.ordered || newRoles.length) &&
+      roles.some(({ key }) => state.roles[key] && !serverRoles.get(state.roles[key]).editable)) {
     throw new SetupError('Przenieś rolę bota nad wszystkie role utworzone w trakcie konfiguracji.');
   }
 
   const migration = [
-    ...categories.map((category) => ({
+    ...scopedCategories.map((category) => ({
       id: state.categories[category.key], label: categoryLabel(category),
       oldLabels: legacyCategoryLabels(category), access: category.access, version: layoutVersion,
     })),
-    ...channelEntries.map(({ category, channel }) => ({
+    ...scopedChannels.map(({ category, channel }) => ({
       id: state.channels[channel.name], label: channelLabel(channel),
       oldLabels: legacyChannelLabels(channel), access: channel.access ?? category.access,
       adult: channel.adult,
@@ -168,8 +174,11 @@ export async function inspect(guild, state) {
 }
 
 function legacyCategoryLabels(category) {
-  const name = category.legacyName ?? category.name;
-  return [name, categoryLabel({ ...category, name })];
+  const names = new Set([category.name, category.legacyName ?? category.name]);
+  return [...new Set([...names].flatMap((name) => {
+    const styled = categoryLabel({ ...category, name });
+    return [name, styled, styled.replace('━━ ', '─ ').replace(' ━━', ' ─')];
+  }))];
 }
 
 function legacyChannelLabels(channel) {
@@ -341,7 +350,11 @@ export async function applySetup(guild, journal, plan) {
     state.ordered = true;
     await save();
   }
+  await applyChannels(guild, journal, plan);
+  return finishSetup(guild, journal);
+}
 
+export async function applyChannels(guild, { state, save }, plan) {
   for (const category of plan.newCategories) {
     const created = await guild.channels.create({
       name: categoryLabel(category),
@@ -387,6 +400,18 @@ export async function applySetup(guild, journal, plan) {
     state.layout[item.id] = item.version;
     await save();
   }
+  const current = await guild.channels.fetch();
+  for (const category of categories) {
+    const saved = current.get(state.categories[category.key]);
+    const label = categoryLabel(category);
+    if (saved?.type === ChannelType.GuildCategory && saved.name !== label &&
+        legacyCategoryLabels(category).includes(saved.name)) {
+      await saved.setName(label, 'Ozdobny układ kategorii serwera');
+    }
+  }
+}
+
+async function finishSetup(guild, { state, save }) {
   await positionStats(guild, state);
   const currentChannels = await guild.channels.fetch();
   for (const { category, channel } of channelEntries) {
@@ -513,9 +538,12 @@ export async function privateModerationChannel(guild, state, { force = true, nam
     throw new SetupError('Najpierw ukończ konfigurację serwera.');
   }
   const channel = await guild.channels.fetch(id, { force });
-  const expected = overwrites(guild, state, name === 'logi-bota' ? 'logs' : 'mods');
+  const item = channelEntries.find(({ channel }) => channel.name === name);
+  const access = item?.channel.access ?? item?.category.access;
+  const expected = overwrites(guild, state, access);
   const actual = channel?.permissionOverwrites?.cache;
-  if (channel?.type !== ChannelType.GuildText || channel.parentId !== state.categories.moderation ||
+  if (!['logs', 'mods'].includes(access) || channel?.type !== ChannelType.GuildText ||
+      channel.parentId !== state.categories[item.category.key] ||
       !matchesOverwrites(actual, expected)) {
     throw new SetupError('Prywatny kanał modów wymaga sprawdzenia uprawnień przez administrację.');
   }
@@ -523,13 +551,13 @@ export async function privateModerationChannel(guild, state, { force = true, nam
 }
 
 export async function installProtection(guild, state) {
-  const channel = await privateModerationChannel(guild, state, { name: 'logi-bota' });
+  const channel = await privateModerationChannel(guild, state, { name: 'log-ochrona' });
   const rules = await guild.autoModerationRules.fetch();
   const outcomes = [];
   let moved = 0;
   for (const rule of rules.values()) {
     const sendsToStaff = (action) => action.type === AutoModerationActionType.SendAlertMessage &&
-      action.metadata?.channelId === state.channels['mod-log'];
+      [state.channels['mod-log'], state.channels['logi-bota']].includes(action.metadata?.channelId);
     if (!rule.actions?.some(sendsToStaff)) continue;
     await rule.edit({
       actions: rule.actions.map((action) => ({
@@ -540,7 +568,7 @@ export async function installProtection(guild, state) {
           customMessage: action.metadata?.customMessage ?? undefined,
         },
       })),
-      reason: 'Przeniesienie alertów do kanału logi-bota',
+      reason: 'Przeniesienie alertów do kanału ochrony',
     });
     moved++;
   }

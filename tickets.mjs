@@ -76,7 +76,7 @@ export function createTickets({ getState, log, logError }) {
       if (channels.filter(({ parentId }) => parentId === state.categories.moderation).size >= 48) {
         throw new SetupError('Brakuje miejsca na nowy kanał zgłoszenia. Poproś moderację o pomoc.');
       }
-      const logsChannel = await privateModerationChannel(guild, state, { name: 'logi-bota' });
+      const logsChannel = await privateModerationChannel(guild, state, { name: 'log-tickety' });
       const channel = await guild.channels.create({
         name: 'zgloszenie-' + user.id.slice(-6),
         parent: state.categories.moderation,
@@ -125,7 +125,7 @@ export function createTickets({ getState, log, logError }) {
       await interaction.message.edit({ components: [] }).catch(logError);
       await channel.send({ content: '🔒 Zgłoszenie zostało zamknięte. Historia jest dostępna do odczytu.',
         allowedMentions: noMentions }).catch(logError);
-      await log(guild, '🔒 Zamknięcie zgłoszenia', `Kanał: <#${channel.id}>\nZamknął: <@${actor.id}>.`);
+      await log(guild, 'log-tickety', '🔒 Zamknięcie zgłoszenia', `Kanał: <#${channel.id}>\nZamknął: <@${actor.id}>.`);
       return 'Zgłoszenie zamknięte.';
     } finally {
       closing.delete(channel.id);

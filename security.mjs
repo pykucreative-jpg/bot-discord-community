@@ -30,6 +30,12 @@ const auditActions = new Map(Object.entries({
   AutoModerationRuleCreate: 'Utworzono regułę AutoMod', AutoModerationRuleUpdate: 'Zmieniono regułę AutoMod',
   AutoModerationRuleDelete: 'Usunięto regułę AutoMod',
 }).map(([key, description]) => [AuditLogEvent[key], description]));
+const auditRoutes = new Map(Object.entries({
+  'log-wiadomosci': ['MessageDelete', 'MessageBulkDelete'],
+  'log-role': ['MemberRoleUpdate', 'RoleCreate', 'RoleUpdate', 'RoleDelete'],
+  'log-moderacja': ['MemberKick', 'MemberPrune', 'MemberBanAdd', 'MemberBanRemove', 'MemberUpdate'],
+  'log-ochrona': ['AutoModerationRuleCreate', 'AutoModerationRuleUpdate', 'AutoModerationRuleDelete'],
+}).flatMap(([channel, actions]) => actions.map((action) => [AuditLogEvent[action], channel])));
 const BOOST_TYPES = new Set([
   MessageType.GuildBoost, MessageType.GuildBoostTier1, MessageType.GuildBoostTier2, MessageType.GuildBoostTier3,
 ]);
@@ -196,8 +202,8 @@ export function createSecurity({ client, guildId, getState, logError }) {
     const state = getState();
     if (!active(guild) || !state.channels[name]) return;
     try {
-      const channel = name === 'logi-bota'
-        ? await privateModerationChannel(guild, state, { force: false })
+      const channel = name === 'logi-bota' || name.startsWith('log-')
+        ? await privateModerationChannel(guild, state, { force: false, name })
         : await guild.channels.fetch(state.channels[name]);
       if (channel?.type === ChannelType.GuildText) return await channel.send({ embeds: [embed], allowedMentions: NO_MENTIONS });
     } catch (error) {
@@ -205,8 +211,8 @@ export function createSecurity({ client, guildId, getState, logError }) {
     }
   }
 
-  function log(guild, title, description, color) {
-    return post(guild, 'logi-bota', card(title, description, color));
+  function log(guild, destination, title, description, color) {
+    return post(guild, destination, card(title, description, color));
   }
 
   function stats(guild) {
@@ -300,7 +306,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
       const accountIsNew = Date.now() - member.user.createdTimestamp < newAccountAge;
       const raidActive = Date.now() < raidUntil;
       if (accountIsNew || raidActive) {
-        const queue = await privateModerationChannel(guild, state);
+        const queue = await privateModerationChannel(guild, state, { name: 'log-moderacja' });
         await member.roles.add(gate.review.id, 'Akceptacja regulaminu i oczekiwanie na decyzję');
         try {
           await queue.send({
@@ -316,7 +322,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
         return 'Regulamin przyjęty. Moderacja sprawdzi Twoje zgłoszenie przed odblokowaniem dostępu.';
       }
       await member.roles.add(gate.verified.id, 'Akceptacja regulaminu');
-      await log(guild, '✅ Weryfikacja zakończona', label(member.user));
+      await log(guild, 'log-moderacja', '✅ Weryfikacja zakończona', label(member.user));
       return 'Gotowe! Masz rolę **Zweryfikowany**. Odblokowano kanały społeczności.';
     });
   }
@@ -369,7 +375,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
       } else {
         await member.roles.remove(gate.blocked.id, note);
       }
-      await log(guild, '🛂 Decyzja weryfikacyjna',
+      await log(guild, 'log-moderacja', '🛂 Decyzja weryfikacyjna',
         `Osoba: ${label(member.user)}\nAkcja: **${action}**\nModerator: ${label(actor.user)}\nPowód: ${detail(reason)}`);
       return 'Zapisano decyzję weryfikacyjną.';
     });
@@ -402,7 +408,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
     }
     const target = await targetMember(interaction, actor, panel?.id);
     if (action === 'ostrzez') {
-      const channel = await privateModerationChannel(guild, getState(), { name: 'logi-bota' });
+      const channel = await privateModerationChannel(guild, getState(), { name: 'log-moderacja' });
       await channel.send({ embeds: [card('⚠️ Ostrzeżenie',
         `Osoba: ${label(target.user)}\nModerator: ${label(actor.user)}\nPowód: ${detail(reason)}`, 0xE7A84C)], allowedMentions: NO_MENTIONS });
       const sent = await target.send({ embeds: [card('⚠️ Ostrzeżenie od moderacji',
@@ -435,7 +441,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
   }
 
   function logClear(guild, channelId, actor, count) {
-    return log(guild, '🧹 Czyszczenie wiadomości',
+    return log(guild, 'log-wiadomosci', '🧹 Czyszczenie wiadomości',
       `Kanał: <#${channelId}>\nModerator: ${label(actor.user)}\nUsunięto: ${count}`);
   }
 
@@ -495,7 +501,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
       if (joins.size >= 6 || freshCount >= 3) {
         const alert = now >= raidUntil;
         raidUntil = now + 10 * 60_000;
-        if (alert) await log(guild, '🚨 Wykryto falę dołączeń',
+        if (alert) await log(guild, 'log-ochrona', '🚨 Wykryto falę dołączeń',
           `W ciągu 20 sekund dołączyło ${joins.size} różnych osób, w tym ${freshCount} z kontem młodszym niż 7 dni. Ręczna ocena weryfikacji przez 10 minut.`, 0xE85D75);
       }
       const welcome = await post(guild, 'witamy', card('👋 Witaj w Centrum Graczy!',
@@ -503,7 +509,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
       if (welcome) console.log('Wysłano automatyczne powitanie w kanale witamy.');
     }
     const createdAt = Math.floor(user.createdTimestamp / 1000);
-    await log(guild, '📥 Wejście na serwer',
+    await log(guild, 'logi-bota', '📥 Wejście na serwer',
       `${label(user)}\nWiek konta: **${accountAge(user, now)}**\nUtworzone: <t:${createdAt}:F> (<t:${createdAt}:R>).\nLiczba kont na serwerze: **${guild.memberCount}**.${!user.bot && accountIsNew ? '\n⚠️ Nowe konto. Weryfikacja wymaga decyzji moderatora.' : ''}`);
   });
   on(Events.GuildMemberRemove, async (member) => {
@@ -514,7 +520,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
         `**${detail(member.user.username)}** opuścił(a) Centrum Graczy. Dzięki za wspólny czas i powodzenia w kolejnych rozgrywkach! 🎮`, 0x7767AF));
       if (farewell) console.log('Wysłano automatyczne pożegnanie w kanale pozegnania.');
     }
-    await log(member.guild, '📤 Opuszczenie serwera', label(member.user));
+    await log(member.guild, 'logi-bota', '📤 Opuszczenie serwera', label(member.user));
   });
   on(Events.GuildMemberUpdate, async (before, after) => {
     if (!active(after.guild) || before.partial || before.premiumSinceTimestamp || !after.premiumSinceTimestamp) return;
@@ -532,7 +538,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
     const to = after.channelId ? `<#${after.channelId}>` : 'poza głosowymi';
     const title = !before.channelId ? '🔊 Wejście na kanał głosowy'
       : !after.channelId ? '🔇 Wyjście z kanału głosowego' : '🔀 Przejście między kanałami głosowymi';
-    await log(guild, title, `${label(member.user)}\n${from} → ${to}`);
+    await log(guild, 'logi-bota', title, `${label(member.user)}\n${from} → ${to}`);
   });
 
   on(Events.ChannelUpdate, async (_before, channel) => {
@@ -545,7 +551,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
     await lockTicketChannel(channel, getState());
     if (channel.id !== getState().channels.nsfw || channel.type !== ChannelType.GuildText || channel.nsfw) return;
     await channel.edit({ nsfw: true, reason: 'Przywrócenie ograniczenia wiekowego w strefie 18+' });
-    await log(channel.guild, '🔞 Przywrócono ograniczenie wiekowe', `Kanał: <#${channel.id}>`, 0xE85D75);
+    await log(channel.guild, 'log-ochrona', '🔞 Przywrócono ograniczenie wiekowe', `Kanał: <#${channel.id}>`, 0xE85D75);
   });
 
   on(Events.MessageCreate, async (message) => {
@@ -566,24 +572,24 @@ export function createSecurity({ client, guildId, getState, logError }) {
       if (member.isCommunicationDisabled()) return;
       rates.delete(author.id);
       await member.timeout(120_000, 'Automatyczna ochrona: 8 wiadomości w 8 sekund');
-      await log(guild, '🛡️ Zatrzymano flood',
+      await log(guild, 'log-ochrona', '🛡️ Zatrzymano flood',
         `${label(author)}\nKanał: <#${message.channelId}>\nOgraniczenie pisania: 2 minuty.`, 0xE85D75);
     });
   });
   on(Events.MessageUpdate, async (before, after) => {
     if (!active(after.guild) || after.author?.bot || !after.editedTimestamp || before.editedTimestamp === after.editedTimestamp) return;
     if (!tracked(after.channel)) return;
-    await log(after.guild, '✏️ Edycja wiadomości',
+    await log(after.guild, 'log-wiadomosci', '✏️ Edycja wiadomości',
       `Kanał: <#${after.channelId}>\nID: \`${after.id}\`\nAutor: ${after.author ? label(after.author) : 'brak danych'}`);
   });
   on(Events.MessageDelete, async (message) => {
     if (!active(message.guild) || message.author?.bot || !tracked(message.channel)) return;
-    await log(message.guild, '🗑️ Usunięcie wiadomości',
+    await log(message.guild, 'log-wiadomosci', '🗑️ Usunięcie wiadomości',
       `Kanał: <#${message.channelId}>\nID: \`${message.id}\`\nAutor: ${message.author ? label(message.author) : 'brak danych'}`);
   });
   on(Events.MessageBulkDelete, async (messages, channel) => {
     if (!active(channel.guild) || !tracked(channel)) return;
-    await log(channel.guild, '🧹 Zbiorcze usuwanie wiadomości',
+    await log(channel.guild, 'log-wiadomosci', '🧹 Zbiorcze usuwanie wiadomości',
       `Kanał: <#${channel.id}>\nLiczba wiadomości: ${messages.size}`);
   });
   on(Events.GuildAuditLogEntryCreate, async (entry, guild) => {
@@ -607,7 +613,8 @@ export function createSecurity({ client, guildId, getState, logError }) {
       ...(Number.isFinite(entry.extra?.count) ? [`Liczba wiadomości: ${entry.extra.count}`] : []),
       ...details.map((change) => `• ${change}`),
     ];
-    await log(guild, `🧾 ${action}`, lines.join('\n'));
+    const destination = auditRoutes.get(entry.action) ?? 'logi-bota';
+    await log(guild, destination, `🧾 ${action}`, lines.join('\n'));
   });
 
   setInterval(() => {

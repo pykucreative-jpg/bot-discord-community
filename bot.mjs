@@ -9,7 +9,7 @@ import { controls, manualRoles, moderationButtons, panelModal, verificationButto
 import { boostSystemSettings, createSecurity, securityCommands } from './security.mjs';
 import { createTickets } from './tickets.mjs';
 import {
-  applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
+  applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
   SetupError, withSetupLock,
 } from './setup.mjs';
 
@@ -104,7 +104,18 @@ async function withConfiguration(task) {
 
 async function runSetup(guild, notify = async () => {}) {
   return withConfiguration(async () => {
-    const plan = await inspect(guild, journal.state);
+    let plan;
+    try {
+      plan = await inspect(guild, journal.state);
+    } catch (error) {
+      if (!(error instanceof SetupError) || !journal.state.securityReady) throw error;
+      const logPlan = await inspect(guild, journal.state, 'bot-logs');
+      await notify();
+      await applyChannels(guild, journal, logPlan);
+      const protection = await installProtection(guild, journal.state);
+      startupSummary = `Kanały logów gotowe w kategorii ${journal.state.categories['bot-logs']}.\n${protection}\nPozostała konfiguracja: ${error.message}`;
+      return startupSummary;
+    }
     await notify();
     const messages = await applySetup(guild, journal, plan);
     const verificationStatus = await security.gateRoles(guild, true).then(() => {
@@ -152,6 +163,7 @@ async function runSetup(guild, notify = async () => {}) {
     }
     security.refreshStats(guild).catch(logError);
     startupSummary = `Gotowe. Dodano role (${plan.newRoles.length}), kategorie (${plan.newCategories.length}), kanały (${plan.newChannels.length}) i karty (${messages}).\n\n${protectionStatus}${boostStatus}${verificationStatus}`;
+    console.log(`Kanały logów gotowe w kategorii ${journal.state.categories['bot-logs']}.`);
     return startupSummary;
   });
 }
@@ -240,7 +252,7 @@ async function announce(interaction, member, key = interaction.options.getString
     .setTitle(title).setDescription(text)
     .setFooter({ text: 'CENTRUM SPOŁECZNOŚCI' }).setTimestamp();
   await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
-  await security.log(interaction.guild, '📣 Publikacja ogłoszenia', `Osoba: <@${member.id}>\nKanał: <#${id}>`);
+  await security.log(interaction.guild, 'logi-bota', '📣 Publikacja ogłoszenia', `Osoba: <@${member.id}>\nKanał: <#${id}>`);
   return `Ogłoszenie opublikowano w <#${id}>.`;
 }
 
@@ -339,8 +351,8 @@ function validateControl(interaction, action) {
   if (action === 'ticket-close' && state.securityReady && interaction.message?.author?.id === interaction.client.user.id) return;
   const queueReview = ['approve-queue', 'hold-queue'].includes(action);
   const publicPanel = ['report', 'send-report'].includes(action);
-  const key = publicPanel ? 'start-tutaj'
-    : queueReview ? (interaction.channelId === state.channels['mod-log'] ? 'mod-log' : 'logi-bota') : 'panel-moderacji';
+  const queueKey = ['mod-log', 'logi-bota', 'log-moderacja'].find((name) => state.channels[name] === interaction.channelId);
+  const key = publicPanel ? 'start-tutaj' : queueReview ? queueKey : 'panel-moderacji';
   const mainPanel = publicPanel || ['status', 'announce', 'publish', 'moderate',
     'unban', 'lift-ban', 'clear-channel', 'clear'].includes(action);
   if (!state.securityReady || interaction.channelId !== state.channels[key] ||

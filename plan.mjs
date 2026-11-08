@@ -87,8 +87,18 @@ export const categories = [
       { name: 'mod-log', label: 'modzi', emoji: '🛡️', legacyEmoji: '📋', layout: 5,
         topic: 'Prywatny czat moderatorów.' },
       { name: 'panel-moderacji', emoji: '🛠️', topic: 'Panel i narzędzia moderacji.', access: 'logs' },
-      { name: 'logi-bota', label: 'logi-bota', emoji: '📋', layout: 4,
-        topic: 'Logi, alerty i zgłoszenia do oceny.', access: 'logs' },
+    ],
+  },
+  {
+    key: 'bot-logs', name: '📋・LOGI BOTA', access: 'logs',
+    channels: [
+      { name: 'log-wiadomosci', label: 'wiadomosci', emoji: '📝', topic: 'Edycje, usunięcia i czyszczenie wiadomości.' },
+      { name: 'log-role', label: 'role', emoji: '🎭', topic: 'Dodawanie, zdejmowanie i zmiany ról.' },
+      { name: 'logi-bota', label: 'zmiany-serwera', emoji: '⚙️', legacyEmoji: '📋', legacyCategory: 'moderation',
+        layout: 5, topic: 'Zmiany ustawień i kanałów oraz zdarzenia członków serwera.' },
+      { name: 'log-ochrona', label: 'ochrona', emoji: '🚨', topic: 'Alerty AutoMod, spam i naloty.' },
+      { name: 'log-tickety', label: 'tickety', emoji: '🎫', topic: 'Otwarcia i zamknięcia prywatnych ticketów.' },
+      { name: 'log-moderacja', label: 'moderacja', emoji: '🛡️', topic: 'Akcje moderacyjne i decyzje weryfikacyjne.' },
     ],
   },
   {
@@ -106,8 +116,9 @@ export function channelLabel(channel) {
 
 export const categoryLabel = (category) => {
   if (category.key === 'live-stats') return category.name;
+  if (category.key === 'bot-logs') return `╭━━ ${category.name} ━━╮`;
   const frame = category.key === 'start' ? '╭' : category.key === 'adult' ? '╰' : '├';
-  return `${frame}─ ${category.name} ─${category.key === 'adult' ? '╯' : '╮'}`;
+  return `${frame}━━ ${category.name} ━━${category.key === 'adult' ? '╯' : '╮'}`;
 };
 
 export const starterMessages = {
