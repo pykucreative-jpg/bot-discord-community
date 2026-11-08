@@ -26,4 +26,7 @@ footer{padding:15px 0 24px;border-top:1px solid var(--line);display:flex;justify
 .admin-nav button[aria-current]{box-shadow:inset 2px 0 var(--accent)}
 .admin-view{min-width:0}
 .admin-view h2{margin-bottom:10px;font-size:17px}
+.admin-nav button svg{width:16px;height:16px}
+.admin-counts,.admin-view .demo-shell,.admin-view .service-list{margin-top:12px}
+.admin-view .mock-header{flex-wrap:wrap}
 @media(max-width:620px){.admin-layout{grid-template-columns:1fr}.admin-nav{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-nav button{font-size:12px}}

@@ -10,6 +10,7 @@ const staticFiles = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/style.css': ['style.css', 'text/css; charset=utf-8'],
   '/admin.js': ['admin.js', 'text/javascript; charset=utf-8'],
+  '/panel-guide.js': ['panel-guide.js', 'text/javascript; charset=utf-8'],
   '/assets/avatar.png': ['assets/avatar.png', 'image/png'],
 };
 const permissionNames = {
@@ -143,6 +144,10 @@ export function createWebAdmin({ client, origin, port, log, logError, closeTicke
 
   async function action(actor, path, method, search, request) {
     const reason = (label) => `Moderator ${actor.id}: panel WWW · ${label}`;
+    if (path === '/v1/status' && method === 'GET') {
+      const counts = await client.guilds.fetch({ guild: guild.id, force: true, cache: false }).catch(() => null);
+      return { online: client.isReady(), total: counts?.approximateMemberCount, present: counts?.approximatePresenceCount };
+    }
     if (path === '/v1/overview' && method === 'GET') {
       const [channels, roles] = await Promise.all([guild.channels.fetch(), guild.roles.fetch()]);
       return {

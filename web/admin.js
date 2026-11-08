@@ -18,7 +18,10 @@
       else button.removeAttribute('aria-current');
     }
   }
-  for (const button of views) button.addEventListener('click', () => showView(button));
+  for (const button of views) button.addEventListener('click', () => {
+    showView(button);
+    if (button === views[0] || button.dataset.view === 'admin-features') refreshStatus();
+  });
   const showLogin = () => {
     find('admin-login').hidden = false;
     find('admin-console').hidden = true;
@@ -26,7 +29,9 @@
     find('admin-messages').replaceChildren();
     find('admin-members').replaceChildren();
     find('member-tools').hidden = true;
+    find('admin-member-tools').open = false;
     find('mod-reason').value = '';
+    for (const id of ['admin-total', 'admin-online', 'admin-offline']) find(id).textContent = '—';
     showView(views[0]);
   };
   function clearSession() {
@@ -46,6 +51,20 @@
     if (response.status === 401 && secret) clearSession();
     if (!response.ok) throw new Error(data.error || 'Serwis chwilowo nie odpowiada.');
     return data;
+  }
+  async function refreshStatus() {
+    const activeSecret = secret;
+    try {
+      const result = await api('/status');
+      if (activeSecret !== secret) return;
+      const { total, present } = result;
+      find('admin-total').textContent = total ?? '—';
+      find('admin-online').textContent = present ?? '—';
+      find('admin-offline').textContent = Number.isInteger(total) && Number.isInteger(present) ? Math.max(0, total - present) : '—';
+      find('admin-bot-status').textContent = result.online ? '● Bot online' : '○ Bot offline';
+    } catch {
+      if (activeSecret === secret) find('admin-bot-status').textContent = 'Status połączenia jest chwilowo niedostępny.';
+    }
   }
   function use(id, event, handler) {
     const target = find(id);
@@ -113,6 +132,7 @@
     find('admin-login').hidden = true;
     find('admin-console').hidden = false;
     status('Połączono z Discordem. Zmiany w tej sekcji są wykonywane na serwerze.');
+    refreshStatus();
   }
   async function checkLogin(challenge) {
     if (pending !== challenge) return;
