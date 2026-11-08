@@ -10,6 +10,18 @@ const color = (kind) => kind === 'plus' ? 0x2ECC71 : 0xE74C3C;
 const key = (kind, number) => `staff-${kind}-${number}`;
 const levels = (kind) => Array.from({ length: limits[kind] }, (_, index) => index + 1);
 
+function pointCard({ kind, number, recipient, actor, note, outcome, demo = false }) {
+  const title = kind === 'plus' ? '🌟 Przyznano plusa' : '⚠️ Przyznano minusa';
+  const embed = new EmbedBuilder().setTitle(demo ? `🧪 Próba · ${title}` : title).setColor(color(kind)).setTimestamp()
+    .addFields({ name: 'Odbiorca', value: `<@${recipient}>`, inline: true },
+      { name: 'Przyznał(a)', value: `<@${actor}>`, inline: true },
+      { name: kind === 'plus' ? 'Który plus?' : 'Który minus?', value: `**${number}/${limits[kind]}**`, inline: true },
+      { name: 'Za co?', value: escapeMarkdown(note) })
+    .setFooter({ text: 'Po Godzinach · Punkty administracji' });
+  if (outcome) embed.addFields({ name: 'Wynik', value: outcome });
+  return embed;
+}
+
 export const staffPointCommands = Object.keys(limits).map((kind) => new SlashCommandBuilder()
   .setName(kind).setDescription(`Przyznaj ${kind} członkowi administracji.`)
   .addUserOption((option) => option.setName('osoba').setDescription('Członek administracji').setRequired(true))
@@ -62,7 +74,10 @@ export async function giveStaffPoint(interaction, actor, state, logError) {
     }
     if (demo) {
       const consequence = kind === 'minus' ? '\nPrzy prawdziwym 3/3 bot zdejmuje najwyższą rangę ekipy, którą może zdjąć.' : '';
-      return `🧪 **Próba /${kind}** · nadano by rangę **${marks[0].name}**.\nPowód: ${escapeMarkdown(note)}\nPrawdziwy wpis trafia do <#${channel.id}>.${consequence}`;
+      return {
+        content: `Prawdziwy wpis trafia do <#${channel.id}>.${consequence}`,
+        embeds: [pointCard({ kind, number: 1, recipient: id, actor: actor.id, note, demo: true })],
+      };
     }
     const current = marks.findLastIndex(({ id: roleId }) => target.roles.cache.has(roleId)) + 1;
     const limit = limits[kind];
@@ -82,15 +97,26 @@ export async function giveStaffPoint(interaction, actor, state, logError) {
     await target.roles.set([...next], `Punkty administracji: ${title} · wykonawca ${actor.id}`);
     const outcome = degraded ? `Degradacja: zdjęto rangę „${degraded.name}”.`
       : kind === 'plus' && number === limit ? 'Osiągnięto maksymalną liczbę plusów.' : '';
-    const embed = new EmbedBuilder().setTitle(title).setColor(color(kind)).setTimestamp()
-      .addFields({ name: 'Osoba', value: `<@${id}>`, inline: true },
-        { name: 'Wykonawca', value: `<@${actor.id}>`, inline: true },
-        { name: 'Powód', value: escapeMarkdown(note) });
-    if (outcome) embed.addFields({ name: 'Wynik', value: outcome });
-    const logged = await channel.send({ embeds: [embed], allowedMentions: { parse: [] }, nonce: interaction.id, enforceNonce: true })
+    const embed = pointCard({ kind, number, recipient: id, actor: actor.id, note, outcome });
+    const mention = kind === 'plus' ? `<@${id}>` : undefined;
+    const canSeeLog = mention && channel.permissionsFor(target)?.has('ViewChannel');
+    const logged = await channel.send({
+      content: mention, embeds: [embed], allowedMentions: { parse: [], users: canSeeLog ? [id] : [] },
+      nonce: interaction.id, enforceNonce: true,
+    })
       .then(() => true).catch((error) => { logError(error); return false; });
+    let notification;
+    if (mention && (!canSeeLog || !logged)) {
+      const sent = await target.send({ content: mention, embeds: [embed], allowedMentions: { parse: [], users: [id] } })
+        .then(() => true).catch((error) => {
+          if (Number(error.code) !== 50007) logError(error);
+          return false;
+        });
+      notification = sent ? 'Odbiorca dostał kartę w wiadomości prywatnej.' : 'Bot nie mógł wysłać odbiorcy wiadomości prywatnej.';
+    }
     return [`Przyznano **${title}** dla <@${id}>.`, outcome,
-      logged ? `Zapis: <#${channel.id}>.` : 'Punkt przyznano, ale zapis w kanale się nie powiódł.'].filter(Boolean).join('\n');
+      logged ? `Zapis: <#${channel.id}>.` : 'Punkt przyznano, ale zapis w kanale się nie powiódł.',
+      notification].filter(Boolean).join('\n');
   } finally {
     active.delete(id);
   }
