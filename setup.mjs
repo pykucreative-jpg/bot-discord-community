@@ -5,7 +5,7 @@ import {
   ActionRowBuilder, AutoModerationActionType, AutoModerationRuleEventType, AutoModerationRuleTriggerType,
   ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, OverwriteType, PermissionsBitField, RESTJSONErrorCodes,
 } from 'discord.js';
-import { categories, categoryLabel, channelLabel, roleLabel, roles, starterMessages } from './plan.mjs';
+import { categories, categoryLabel, channelLabel, plusLogs, roleLabel, roles, starterMessages } from './plan.mjs';
 import { communityButtons, staffButtons, verificationButton } from './panels.mjs';
 import { makeRolePanel } from './role-panel.mjs';
 
@@ -562,11 +562,12 @@ export async function privateModerationChannel(guild, state, { force = true, nam
   }
   const channel = await guild.channels.fetch(id, { force });
   const item = channelEntries.find(({ channel }) => channel.name === name);
-  const access = item?.channel.access ?? item?.category.access;
+  const extraLog = Object.hasOwn(plusLogs, name);
+  const access = extraLog ? 'logs' : item?.channel.access ?? item?.category.access;
   const expected = overwrites(guild, state, access);
   const actual = channel?.permissionOverwrites?.cache;
   if (!['logs', 'mods'].includes(access) || channel?.type !== ChannelType.GuildText ||
-      channel.parentId !== state.categories[item.category.key] ||
+      channel.parentId !== state.categories[extraLog ? 'bot-logs' : item.category.key] ||
       !matchesOverwrites(actual, expected)) {
     throw new SetupError('Prywatny kanał modów wymaga sprawdzenia uprawnień przez administrację.');
   }

@@ -10,6 +10,7 @@ import { boostSystemSettings, createSecurity, securityCommands } from './securit
 import { createTickets } from './tickets.mjs';
 import { createMusic, removeMusicPanel } from './music.mjs';
 import { createJockiePanel } from './jockie-panel.mjs';
+import { createCommunityPlus } from './community-plus.mjs';
 import {
   applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
   SetupError, styleManagedRoles, withSetupLock,
@@ -21,7 +22,8 @@ if (process.argv[2] === '--link') {
   if (!snowflake.test(appId)) throw new Error('Podaj Application ID skopiowane z Discord Developer Portal.');
   const query = new URLSearchParams({
     client_id: appId, scope: 'bot applications.commands',
-    permissions: (botPermissions.bitfield | (PermissionFlagsBits.PinMessages ?? 0n)).toString(),
+    permissions: (botPermissions.bitfield | PermissionFlagsBits.PinMessages | PermissionFlagsBits.MoveMembers |
+      PermissionFlagsBits.CreateInstantInvite).toString(),
     integration_type: '0',
   });
   console.log('https://discord.com/oauth2/authorize?' + query);
@@ -88,6 +90,8 @@ const security = createSecurity({ client, guildId, getState: () => journal.state
 const tickets = createTickets({ getState: () => journal.state, log: security.log, logError });
 const music = process.env.DISCORD_MUSIC === 'true' ? createMusic({ client, getState: () => journal.state, logError }) : undefined;
 const jockie = process.env.DISCORD_JOCKIE_PANEL === 'true' ? createJockiePanel({ client, logError }) : undefined;
+const communityPlus = process.env.DISCORD_COMMUNITY_PLUS === 'true'
+  ? createCommunityPlus({ client, guildId, getState: () => journal.state, security, logError }) : undefined;
 const changingRoles = new Set();
 let building = false;
 let startupSummary = 'Bot uruchamia konfigurację.';
@@ -429,6 +433,7 @@ async function useControl(interaction, action, key, id) {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.inCachedGuild() || interaction.guildId !== guildId) return;
+  if (communityPlus && await communityPlus.handle(interaction)) return;
   if (jockie && await jockie.handle(interaction)) return;
   if (music && await music.handle(interaction)) return;
   const panel = interaction.isStringSelectMenu() && interaction.customId.startsWith(menuPrefix);
@@ -545,6 +550,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     if (error instanceof SetupError) console.warn(error.message);
     else logError(error);
   });
+  if (communityPlus) await withConfiguration(() => communityPlus.setup(guild, journal)).catch(logError);
 });
 
 try {

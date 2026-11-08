@@ -200,6 +200,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
     const ids = channelEntries.map(({ channel }) => channels[channel.name]).filter(Boolean);
     if (channels[musicChannelKey]) ids.push(channels[musicChannelKey]);
     if (channels[musicPanelKey]) ids.push(channels[musicPanelKey]);
+    ids.push(...Object.entries(channels).filter(([key]) => key.startsWith('plus-')).map(([, id]) => id));
     return ids.includes(channel?.id) || (channel?.isThread?.() && ids.includes(channel.parentId));
   }
 
@@ -319,7 +320,14 @@ export function createSecurity({ client, guildId, getState, logError }) {
   }
 
   function log(guild, destination, title, description, color) {
-    return post(guild, destination, card(title, description, color));
+    const exact = {
+      '📥 Wejście na serwer': 'log-wejscia',
+      [departureTitle]: 'log-wyjscia',
+      '✏️ Edycja wiadomości': 'log-edytowane',
+      '🗑️ Usunięcie wiadomości': 'log-usuniete',
+      '🧹 Zbiorcze usuwanie wiadomości': 'log-usuniete',
+    }[title];
+    return post(guild, getState().channels[exact] ? exact : destination, card(title, description, color));
   }
 
   function stats(guild) {
@@ -719,7 +727,18 @@ export function createSecurity({ client, guildId, getState, logError }) {
       ...(Number.isFinite(entry.extra?.count) ? [`Liczba wiadomości: ${entry.extra.count}`] : []),
       ...details.map((change) => `• ${change}`),
     ];
-    const destination = auditRoutes.get(entry.action) ?? 'logi-bota';
+    const keys = (entry.changes ?? []).map(({ key }) => key);
+    const exact = ({
+      [AuditLogEvent.MemberKick]: 'log-wyrzucenia',
+      [AuditLogEvent.MemberBanAdd]: 'log-bany',
+      [AuditLogEvent.MemberBanRemove]: 'log-bany',
+      [AuditLogEvent.MessageDelete]: 'log-usuniete',
+      [AuditLogEvent.MessageBulkDelete]: 'log-usuniete',
+      [AuditLogEvent.MemberRoleUpdate]: keys.includes('$add') && !keys.includes('$remove') ? 'log-nadane-role'
+        : keys.includes('$remove') && !keys.includes('$add') ? 'log-zabrane-role' : undefined,
+      [AuditLogEvent.MemberUpdate]: keys.includes('nick') ? 'log-pseudonimy' : undefined,
+    })[entry.action];
+    const destination = getState().channels[exact] ? exact : auditRoutes.get(entry.action) ?? 'logi-bota';
     await log(guild, destination, `🧾 ${action}`, lines.join('\n'));
   });
 

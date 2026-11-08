@@ -45,6 +45,12 @@ export const roleMenus = [
 
 export const musicChannelKey = 'music-voice';
 export const musicPanelKey = 'music-panel';
+export const plusLogs = {
+  'log-wejscia': '📥│wejścia', 'log-wyjscia': '📤│wyjścia', 'log-bany': '🔨│bany',
+  'log-wyrzucenia': '👢│wyrzucenia', 'log-nadane-role': '➕│nadane-role',
+  'log-zabrane-role': '➖│zabrane-role', 'log-usuniete': '🗑️│usunięte-wiadomości',
+  'log-edytowane': '✏️│edycje-wiadomości', 'log-pseudonimy': '🏷️│pseudonimy',
+};
 
 export const categories = [
   {
