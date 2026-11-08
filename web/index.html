@@ -6,96 +6,16 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#10111c">
-  <meta name="description" content="Przegląd serwera Po Godzinach, statystyki społeczności i demonstracje paneli bota.">
-  <title>Po Godzinach · Przegląd serwera</title>
+  <meta name="description" content="Panel administracji serwera Po Godzinach.">
+  <title>Po Godzinach · Administracja</title>
   <link rel="icon" href="./assets/avatar.png">
   <link rel="stylesheet" href="./style.css">
-  <script src="./app.js" defer></script>
   <script src="./admin.js" defer></script>
 </head>
 <body>
-  <a href="#main" class="skip">Przejdź do treści</a>
-  <aside class="sidebar">
-    <a class="brand" href="#przeglad"><span class="brand-icon"><img src="./assets/avatar.png" alt=""></span><span>Po Godzinach<small>DISCORD OVERVIEW</small></span></a>
-    <div class="nav-label">SERWER</div>
-    <nav aria-label="Nawigacja panelu">
-      <a href="#przeglad" class="selected"><span data-icon="layout"></span> Przegląd</a>
-      <a href="#kanaly"><span data-icon="hash"></span> Kanały i kategorie</a>
-      <a href="#role"><span data-icon="layers"></span> Role i dostęp</a>
-      <a href="#panele"><span data-icon="cursor"></span> Panele bota</a>
-      <a href="#status"><span data-icon="activity"></span> Status funkcji</a>
-      <a href="#administracja"><span data-icon="lock"></span> Administracja</a>
-    </nav>
-    <div class="side-bottom">
-      <div class="side-note"><span data-icon="eye"></span><div><b>Podgląd dla klienta</b><small>Tryb demonstracyjny</small></div></div>
-      <a class="side-link" href="https://discord.com/channels/1568431258550272081" target="_blank" rel="noopener noreferrer"><span data-icon="external"></span> Otwórz Discord</a>
-    </div>
-  </aside>
-
-  <main id="main" class="main">
-    <header class="topbar">
-      <div class="breadcrumbs"><span>Po Godzinach</span><span aria-hidden="true">/</span><b>Przegląd serwera</b></div>
-      <div class="top-actions"><span class="mode-tag"><span class="dot"></span> TRYB PODGLĄDU</span><button id="share" class="icon-btn" type="button" aria-label="Skopiuj adres strony" title="Skopiuj adres strony"><span data-icon="link"></span></button></div>
-    </header>
-
-    <div class="content">
-      <section id="przeglad" aria-labelledby="hero-title">
-        <div class="hero">
-          <img class="hero-art" src="./assets/avatar.png" alt="" fetchpriority="high">
-          <div class="hero-grid"></div>
-          <div class="hero-content">
-            <span class="hero-label"><span class="spark">✦</span> CENTRUM SPOŁECZNOŚCI</span>
-            <h1 id="hero-title">Po Godzinach<span>.</span></h1>
-            <p>Zobacz, jak działa serwer. Sprawdź statystyki, poznaj układ kanałów i wypróbuj panele bota.</p>
-            <div class="hero-actions"><a class="button primary" href="#panele"><span data-icon="cursor"></span> Przetestuj panele <span aria-hidden="true">↗</span></a><a class="button quiet" href="#kanaly">Zobacz kanały <span aria-hidden="true">↓</span></a></div>
-          </div>
-          <span class="hero-stamp">PG / 01</span>
-        </div>
-
-        <div class="section-heading compact"><div><span class="eyebrow">AKTYWNOŚĆ SERWERA</span><h2>Społeczność teraz</h2></div><button id="refresh" class="small-button" type="button"><span data-icon="refresh"></span> Odśwież</button></div>
-        <div class="metrics">
-          <article class="metric"><div class="metric-top"><span class="metric-icon violet" data-icon="users"></span><span>Uczestnicy</span></div><strong id="count-total">—</strong><small>Łącznie na serwerze</small></article>
-          <article class="metric"><div class="metric-top"><span class="metric-icon green" data-icon="activity"></span><span>Online</span></div><strong id="count-online">—</strong><small>Według publicznych danych Discorda</small></article>
-          <article class="metric"><div class="metric-top"><span class="metric-icon slate" data-icon="moon"></span><span>Offline</span></div><strong id="count-offline">—</strong><small>Szacunek na podstawie liczników</small></article>
-        </div>
-        <p id="stats-info" class="status-line" role="status"><span class="dot pending"></span> Pobieram liczniki Discorda…</p>
-      </section>
-
-      <section id="kanaly" aria-labelledby="channels-title">
-        <div class="section-heading"><div><span class="eyebrow">01 / STRUKTURA</span><h2 id="channels-title">Kanały i kategorie</h2><p>Mapa głównych obszarów wdrożenia, od pierwszego wejścia po kanały ekipy.</p></div></div>
-        <div class="filterbar"><label class="search"><span data-icon="search"></span><input id="channel-search" type="search" placeholder="Szukaj kanału lub kategorii" aria-label="Szukaj kanału lub kategorii"></label><div id="channel-filters" class="chips" aria-label="Filtry kanałów"><button type="button" data-filter="all" aria-pressed="true">Wszystkie</button><button type="button" data-filter="text" aria-pressed="false">Tekstowe</button><button type="button" data-filter="voice" aria-pressed="false">Głosowe</button><button type="button" data-filter="staff" aria-pressed="false">Dla ekipy</button></div></div>
-        <div id="channel-list" class="channel-grid"></div>
-      </section>
-
-      <section id="role" aria-labelledby="roles-title">
-        <div class="section-heading"><div><span class="eyebrow">02 / UPRAWNIENIA</span><h2 id="roles-title">Role i dostęp</h2><p>Role są podzielone według funkcji, od weryfikacji po ekipę serwera.</p></div></div>
-        <div id="role-list" class="role-grid"></div>
-      </section>
-
-      <section id="panele" aria-labelledby="panels-title">
-        <div class="section-heading"><div><span class="eyebrow">03 / INTERAKTYWNA DEMONSTRACJA</span><h2 id="panels-title">Panele bota</h2><p>Kliknij przyciski, żeby zobaczyć, jak wygląda obsługa serwera.</p></div><span class="demo-badge">DANE PRZYKŁADOWE</span></div>
-        <div class="demo-shell">
-          <nav id="demo-nav" aria-label="Wybierz demonstrację"></nav>
-          <div class="demo-main">
-            <div class="mock-header"><span data-icon="hash"></span><strong id="demo-channel">regulamin-i-weryfikacja</strong><span class="demo-badge">SYMULACJA</span></div>
-            <div class="mock-chat"><div class="mock-avatar"><img src="./assets/avatar.png" alt=""></div><div class="mock-content">
-              <div class="mock-author"><strong>P.Y.K.U CREATIVE</strong><span>BOT</span></div>
-              <article class="mock-embed"><h3 id="demo-title"></h3><p id="demo-description"></p><div id="demo-detail"></div></article>
-              <div id="demo-buttons" class="demo-buttons"></div>
-              <div id="demo-result" class="demo-result" role="status"></div>
-            </div></div>
-            <div class="mock-footer"><span data-icon="lock"></span> Przyciski działają w symulacji na tej stronie.</div>
-          </div>
-        </div>
-      </section>
-
-      <section id="status" aria-labelledby="status-title">
-        <div class="section-heading"><div><span class="eyebrow">04 / WDROŻENIE</span><h2 id="status-title">Status funkcji</h2><p>Zakres wdrożony na serwerze. Bieżące liczniki Discorda są wyświetlane w przeglądzie.</p></div></div>
-        <div id="service-list" class="service-list"></div>
-      </section>
-
+  <main class="content admin-page">
       <section id="administracja" aria-labelledby="admin-title">
-        <div class="section-heading"><div><span class="eyebrow">05 / KONSOLA ADMINISTRACJI</span><h2 id="admin-title">Administracja</h2><p>Historia wiadomości i zmiany na Discordzie po potwierdzeniu tożsamości.</p></div><span class="demo-badge">DOSTĘP Z ROLĄ WŁAŚCICIEL</span></div>
+        <div class="section-heading"><div><span class="eyebrow">KONSOLA ADMINISTRACJI</span><h1 id="admin-title">Administracja</h1><p>Historia wiadomości i zmiany na Discordzie po potwierdzeniu tożsamości.</p></div><span class="demo-badge">DOSTĘP Z ROLĄ WŁAŚCICIEL</span></div>
         <div class="admin-shell">
           <div id="admin-login"><h3>Zaloguj się przez Discorda</h3><p class="admin-help">Wygeneruj jednorazowy kod i potwierdź go komendą <code>/panel-login</code>. Dostęp wymaga roli „Właściciel” na serwerze.</p>
             <div class="admin-controls"><button id="login-start" class="button primary" type="button">Wygeneruj kod</button><a class="button quiet" href="https://discord.com/channels/1568431258550272081" target="_blank" rel="noopener noreferrer">Otwórz Discord ↗</a></div>
@@ -125,9 +45,6 @@
         </div>
       </section>
 
-      <footer><div class="footer-brand"><img src="./assets/avatar.png" alt=""><span>Po Godzinach <small>Przegląd wdrożenia Discorda</small></span></div><a href="#przeglad">Wróć na górę ↑</a></footer>
-    </div>
   </main>
-  <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>

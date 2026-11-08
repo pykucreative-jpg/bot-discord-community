@@ -9,7 +9,6 @@ const channelKinds = { text: ChannelType.GuildText, voice: ChannelType.GuildVoic
 const staticFiles = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/style.css': ['style.css', 'text/css; charset=utf-8'],
-  '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/admin.js': ['admin.js', 'text/javascript; charset=utf-8'],
   '/assets/avatar.png': ['assets/avatar.png', 'image/png'],
 };
@@ -309,13 +308,12 @@ export function createWebAdmin({ client, origin, port, log, logError, closeTicke
           const [file, type] = staticFiles[path];
           const body = await readFile(new URL(`./web/${file}`, import.meta.url));
           response.writeHead(200, {
-            'Content-Type': type, 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff',
+            'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
             'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY',
-            'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://discord.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+            'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
           });
           return response.end(body);
         }
-        if (path === '/v1/health' && request.method === 'GET') return answer(200, { online: client.isReady() });
         if (!path.startsWith('/v1/')) return answer(404, { error: 'Nie znaleziono strony.' });
         required(request.headers.origin === allowedOrigin || (request.method === 'GET' && !request.headers.origin));
         if (request.method === 'OPTIONS') return answer(204);

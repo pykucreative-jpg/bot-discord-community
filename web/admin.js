@@ -1,10 +1,8 @@
 'use strict';
 (() => {
-  const apiOrigin = 'https://bot-discord-community-production.up.railway.app';
   const find = (id) => document.getElementById(id);
   const flag = find('admin-status');
-  const storageKey = 'pg-admin-session';
-  let secret = sessionStorage.getItem(storageKey);
+  let secret;
   let inventory;
   let pending;
   let timer;
@@ -25,11 +23,10 @@
     pending = undefined;
     secret = null;
     inventory = undefined;
-    sessionStorage.removeItem(storageKey);
     showLogin();
   }
   async function api(path, options = {}) {
-    const response = await fetch(apiOrigin + '/v1' + path, {
+    const response = await fetch('/v1' + path, {
       ...options,
       headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(secret ? { Authorization: `Bearer ${secret}` } : {}) },
       signal: AbortSignal.timeout(12000),
@@ -110,7 +107,6 @@
       if (result.pending) { timer = setTimeout(() => checkLogin(challenge), 2200); return; }
       pending = undefined;
       secret = result.token;
-      sessionStorage.setItem(storageKey,secret);
       await overview();
     } catch (error) {
       pending = undefined;
@@ -270,14 +266,7 @@
     await api('/moderation',post({member:member.value,action:mode.value,reason:find('mod-reason').value}));
     find('mod-reason').value = '';status('Akcja została zapisana na Discordzie.');
   });
-  if (secret) overview().catch((error) => { clearSession();status(error.message); });
-  const botRow = elem('div','service');
-  const botIcon = elem('span','metric-icon violet');botIcon.innerHTML = icon('activity');
-  const botText = elem('div');botText.append(elem('b','','Połączenie bota'),elem('p','','Stan połączenia z Discordem.'));
-  const botBadge = elem('em','','Sprawdzam…');botRow.append(botIcon,botText,botBadge);find('service-list').prepend(botRow);
-  async function botStatus() {
-    try { const result = await api('/health');botBadge.textContent = result.online ? '● Online' : '○ Offline'; }
-    catch { botBadge.textContent = '○ Status niedostępny'; }
-  }
-  botStatus();setInterval(() => { if (!document.hidden) botStatus(); },60000);
+  addEventListener('pageshow', (event) => {
+    if (event.persisted) { clearSession(); status(''); }
+  });
 })();
