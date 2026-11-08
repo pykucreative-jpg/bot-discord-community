@@ -42,6 +42,7 @@ const auditRoutes = new Map(Object.entries({
 const BOOST_TYPES = new Set([
   MessageType.GuildBoost, MessageType.GuildBoostTier1, MessageType.GuildBoostTier2, MessageType.GuildBoostTier3,
 ]);
+const boostChannelId = process.env.DISCORD_BOOST_CHANNEL_ID?.trim();
 
 export function boostSystemSettings(guild, state) {
   if (!state.channels.witamy) throw new SetupError('Najpierw zbuduj kanał powitań.');
@@ -620,8 +621,39 @@ export function createSecurity({ client, guildId, getState, logError }) {
     return `Usunięto ${removed.size} wiadomości z <#${channel.id}>.`;
   }
 
-  const boost = (guild, user) => post(guild, 'witamy', card('💎 Dziękujemy za boost!',
-    `<@${user.id}> właśnie wsparł serwer. Dzięki za pomoc w rozwijaniu społeczności! 💜`, 0xDA75D5));
+  async function boostChannel(guild) {
+    if (!/^\d{17,20}$/.test(boostChannelId ?? '')) throw new SetupError('Nieprawidłowy kanał podziękowań za boost.');
+    const channel = await guild.channels.fetch(boostChannelId);
+    if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel?.type)) {
+      throw new SetupError('Kanał podziękowań za boost musi być kanałem tekstowym.');
+    }
+    return channel;
+  }
+
+  async function prepareBoostThanks(guild) {
+    if (!boostChannelId || !active(guild)) return;
+    const channel = await boostChannel(guild);
+    const bot = await guild.members.fetchMe();
+    const missing = ['ViewChannel', 'SendMessages', 'EmbedLinks'].filter((permission) =>
+      !channel.permissionsFor(bot)?.has(permission));
+    if (missing.length) await channel.permissionOverwrites.edit(bot, Object.fromEntries(missing.map((permission) => [permission, true])),
+      { reason: 'Dostęp bota do podziękowań za boosty' });
+    const ready = (await guild.channels.fetch(channel.id, { force: true })).permissionsFor(bot)?.has(['ViewChannel', 'SendMessages', 'EmbedLinks']);
+    if (!ready) throw new SetupError('Bot nie może wysyłać podziękowań w wybranym kanale.');
+    const source = guild.systemChannelId && !guild.systemChannelFlags.has(SystemChannelFlagsBitField.Flags.SuppressPremiumSubscriptions);
+    console.log(`Podziękowania za boost gotowe w kanale ${channel.id}; powiadomienia systemowe: ${source ? 'włączone' : 'wyłączone'}.`);
+  }
+
+  async function boost(guild, user) {
+    if (!boostChannelId) return post(guild, 'witamy', card('💎 Dziękujemy za boost!',
+      `<@${user.id}> właśnie wsparł serwer. Dzięki za pomoc w rozwijaniu społeczności! 💜`, 0xDA75D5));
+    const channel = await boostChannel(guild);
+    return channel.send({
+      content: `<@${user.id}>`,
+      embeds: [card('💎 Dziękujemy za boost!', 'Dzięki za wsparcie **Po Godzinach** i pomoc w rozwijaniu społeczności! 💜', 0xDA75D5)],
+      allowedMentions: { parse: [], users: [user.id] },
+    });
+  }
 
   on(Events.GuildMemberAdd, async (member) => {
     const { guild, user } = member;
@@ -776,6 +808,6 @@ export function createSecurity({ client, guildId, getState, logError }) {
     return `**📊 Statystyki serwera**\n👥 Razem: **${total}**\n🟢 Online: **${online}**\n⚫ Offline: **${offline}**`;
   }
 
-  return { accept, confirmClear, gateRoles, isVerified, log, moderate, prepareMemberNotices, previewClear, refreshStats, review,
+  return { accept, confirmClear, gateRoles, isVerified, log, moderate, prepareBoostThanks, prepareMemberNotices, previewClear, refreshStats, review,
     statisticsReply, syncPresence };
 }

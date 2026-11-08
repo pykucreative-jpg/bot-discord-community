@@ -541,6 +541,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error(startupSummary);
   }
   await security.prepareMemberNotices(guild).catch(logError);
+  await security.prepareBoostThanks(guild).catch(logError);
   await refreshRoleMenu(guild, journal.state).catch(logError);
   if (music) await withConfiguration(() => music.setup(guild, journal)).catch((error) => {
     if (error instanceof SetupError) console.warn(error.message);
