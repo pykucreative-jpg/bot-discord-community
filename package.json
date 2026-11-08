@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node --env-file=.env bot.mjs",
     "plan": "node plan.mjs",
-    "check": "node --check bot.mjs && node --check setup.mjs && node --check plan.mjs && node --check role-panel.mjs && node --check security.mjs && node --check cleanup.mjs && node --check panels.mjs && node --check tickets.mjs && node --check music.mjs"
+    "check": "node --check bot.mjs && node --check setup.mjs && node --check plan.mjs && node --check role-panel.mjs && node --check security.mjs && node --check cleanup.mjs && node --check panels.mjs && node --check tickets.mjs && node --check music.mjs && node --check jockie-panel.mjs"
   },
   "dependencies": {
     "@discordjs/voice": "0.19.2",
