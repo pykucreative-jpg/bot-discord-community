@@ -18,3 +18,12 @@ footer{padding:15px 0 24px;border-top:1px solid var(--line);display:flex;justify
 .admin-page .section-heading{flex-wrap:wrap}
 .admin-page .section-heading h1{font-size:28px;line-height:1.16;letter-spacing:-.035em}
 .admin-page .status-line:empty{display:none}
+.admin-layout{display:grid;grid-template-columns:205px minmax(0,1fr);gap:14px;align-items:start}
+.admin-nav{display:grid;gap:4px;padding:6px;background:var(--side);border:1px solid var(--line);border-radius:11px}
+.admin-nav button{display:flex;align-items:center;gap:9px;text-align:left;padding:9px 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:13px;font-weight:650}
+.admin-nav button span{width:16px;font-size:16px;text-align:center;flex:none}
+.admin-nav button:hover,.admin-nav button[aria-current]{background:#292440;color:#e6dbff}
+.admin-nav button[aria-current]{box-shadow:inset 2px 0 var(--accent)}
+.admin-view{min-width:0}
+.admin-view h2{margin-bottom:10px;font-size:17px}
+@media(max-width:620px){.admin-layout{grid-template-columns:1fr}.admin-nav{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-nav button{font-size:12px}}

@@ -9,6 +9,16 @@
   let older;
   const status = (text) => { flag.textContent = text; };
   const post = (data = {}) => ({ method: 'POST', body: JSON.stringify(data) });
+  const views = [...find('admin-nav').querySelectorAll('[data-view]')];
+  function showView(selected) {
+    for (const button of views) {
+      const active = button === selected;
+      find(button.dataset.view).hidden = !active;
+      if (active) button.setAttribute('aria-current', 'true');
+      else button.removeAttribute('aria-current');
+    }
+  }
+  for (const button of views) button.addEventListener('click', () => showView(button));
   const showLogin = () => {
     find('admin-login').hidden = false;
     find('admin-console').hidden = true;
@@ -17,6 +27,7 @@
     find('admin-members').replaceChildren();
     find('member-tools').hidden = true;
     find('mod-reason').value = '';
+    showView(views[0]);
   };
   function clearSession() {
     clearTimeout(timer);
@@ -89,9 +100,13 @@
   async function overview() {
     inventory = await api('/overview');
     find('admin-actor').textContent = `Zalogowano jako ${inventory.actor}`;
+    find('admin-guild').textContent = inventory.guild;
     options(find('admin-channels'), inventory.channels, (item) => `${item.category ? '▤' : item.text ? '#' : '◖'} ${item.name}${item.group ? ' · ' + item.group : ''}`);
     options(find('new-channel-parent'), [{id:'',name:'Bez kategorii'}, ...inventory.channels.filter(({category}) => category)], (item) => item.name);
     options(find('admin-roles'), inventory.roles, (item) => item.name);
+    const memberRoles = inventory.roles.filter(({editable}) => editable);
+    options(find('member-role'), memberRoles, (item) => item.name);
+    for (const id of ['role-add', 'role-remove']) find(id).disabled = !memberRoles.length;
     options(find('channel-access-role'), [{id:inventory.everyone,name:'@everyone'}, ...inventory.roles.filter(({editable}) => editable)], (item) => item.name);
     options(find('channel-access-permission'), inventory.channelPermissions.map((id) => ({id,name:inventory.permissionNames[id]})), (item) => item.name);
     roleFields();channelFields();
@@ -252,7 +267,7 @@
   });
   for (const [id,add] of [['role-add',true],['role-remove',false]]) {
     use(id,'click',async () => {
-      const role = selectedRole();
+      const role = inventory?.roles.find(({ id }) => id === find('member-role').value);
       const member = find('admin-members');
       if (!role?.editable || !member.value || !confirm(`${add ? 'Nadać' : 'Zdjąć'} rolę „${role.name}” dla ${member.selectedOptions[0].textContent}?`)) return;
       await api('/roles/member',post({role:role.id,member:member.value,add}));

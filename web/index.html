@@ -23,19 +23,33 @@
           </div>
           <div id="admin-console" hidden>
             <div class="admin-controls"><strong id="admin-actor"></strong><button id="admin-refresh" class="small-button" type="button">Odśwież serwer</button><button id="logout" class="small-button" type="button">Wyloguj</button></div>
-            <div class="admin-columns">
-              <article class="admin-card"><h3>💬 Wiadomości i kanały</h3><label>Kanał<select id="admin-channels"></select></label><div class="admin-controls"><button id="load-messages" type="button" class="button primary">Pobierz wiadomości</button><button id="older-messages" type="button" class="button quiet" hidden>Starsze wiadomości</button><button id="ticket-close" type="button" class="button danger" hidden>Zamknij i archiwizuj zgłoszenie</button></div><div id="admin-messages" class="admin-messages"></div>
+            <div class="admin-layout">
+              <nav id="admin-nav" class="admin-nav" aria-label="Sekcje administracji">
+                <button type="button" data-view="admin-home" aria-controls="admin-home" aria-current="true"><span aria-hidden="true">▤</span> Przegląd</button>
+                <button type="button" data-view="admin-channel-view" aria-controls="admin-channel-view"><span aria-hidden="true">#</span> Kanały i kategorie</button>
+                <button type="button" data-view="admin-role-view" aria-controls="admin-role-view"><span aria-hidden="true">◇</span> Role i dostęp</button>
+                <button type="button" data-view="admin-member-view" aria-controls="admin-member-view"><span aria-hidden="true">♙</span> Członkowie i moderacja</button>
+              </nav>
+              <article id="admin-home" class="admin-card admin-view" aria-labelledby="admin-home-title">
+                <h2 id="admin-home-title">Przegląd</h2>
+                <p id="admin-guild"></p>
+                <p class="admin-help">Wybierz sekcję z menu, aby zarządzać serwerem.</p>
+              </article>
+              <article id="admin-channel-view" class="admin-card admin-view" aria-labelledby="admin-channel-title" hidden><h2 id="admin-channel-title">Kanały i kategorie</h2><label>Kanał<select id="admin-channels"></select></label><div class="admin-controls"><button id="load-messages" type="button" class="button primary">Pobierz wiadomości</button><button id="older-messages" type="button" class="button quiet" hidden>Starsze wiadomości</button><button id="ticket-close" type="button" class="button danger" hidden>Zamknij i archiwizuj zgłoszenie</button></div><div id="admin-messages" class="admin-messages"></div>
                 <form id="channel-edit" hidden><h3>Edycja kanału</h3><label>Nazwa <input id="channel-name" required maxlength="100"></label><label id="channel-topic-field">Opis <input id="channel-topic" maxlength="1024"></label><label id="channel-slow-field">Slowmode (sekundy) <input id="channel-slow" type="number" min="0" max="21600" value="0" required></label><div class="admin-controls"><button class="button quiet">Zapisz kanał</button><button id="channel-delete" type="button" class="button danger">Usuń kanał</button></div></form>
                 <details><summary>Utwórz kanał lub kategorię</summary><form id="channel-create"><label>Nazwa <input id="new-channel-name" required maxlength="100"></label><label>Typ <select id="new-channel-kind"><option value="text">Tekstowy</option><option value="voice">Głosowy</option><option value="category">Kategoria</option></select></label><label>Kategoria nadrzędna <select id="new-channel-parent"></select></label><button class="button quiet">Utwórz</button></form></details>
                 <details id="channel-access-panel" hidden><summary>Dostęp do wybranego kanału</summary><form id="channel-access"><label>Rola <select id="channel-access-role"></select></label><label>Uprawnienie <select id="channel-access-permission"></select></label><label>Ustawienie <select id="channel-access-state"><option value="">Wybierz ustawienie</option><option value="inherit">Bez nadpisania</option><option value="allow">Zezwól</option><option value="deny">Zabroń</option></select></label><p id="channel-access-current" class="admin-help"></p><button class="button quiet">Zapisz dostęp</button></form></details>
               </article>
-              <article class="admin-card"><h3>🛡️ Role i uprawnienia</h3><label>Rola<select id="admin-roles"></select></label><form id="role-edit"><div id="role-perms" class="admin-perms"></div><button class="button primary">Zapisz uprawnienia</button></form><p class="admin-help" id="role-help"></p>
+              <article id="admin-role-view" class="admin-card admin-view" aria-labelledby="admin-role-title" hidden><h2 id="admin-role-title">Role i dostęp</h2><label>Rola<select id="admin-roles"></select></label><form id="role-edit"><div id="role-perms" class="admin-perms"></div><button class="button primary">Zapisz uprawnienia</button></form><p class="admin-help" id="role-help"></p>
                 <details><summary>Nazwa, kolor i zarządzanie rolami</summary>
                   <form id="role-details" hidden><label>Nazwa roli <input id="role-name" required maxlength="100"></label><label>Kolor roli <input id="role-color" type="color"></label><div class="admin-controls"><button class="button quiet">Zapisz nazwę i kolor</button><button id="role-delete" type="button" class="button danger">Usuń rolę</button></div></form>
                   <form id="role-create"><label>Nowa rola <input id="new-role-name" required maxlength="100"></label><label>Kolor <input id="new-role-color" type="color" value="#8b74ff"></label><button class="button quiet">Utwórz rolę</button></form>
                 </details>
-                <form id="member-search"><h3>Członkowie</h3><input id="member-query" minlength="2" maxlength="40" placeholder="Nazwa użytkownika" aria-label="Nazwa użytkownika" required><button class="button quiet">Szukaj</button></form>
-                <div id="member-tools" hidden><label>Osoba<select id="admin-members"></select></label><div class="admin-controls"><button id="role-add" class="button quiet" type="button">Nadaj wybraną rolę</button><button id="role-remove" class="button quiet" type="button">Zdejmij wybraną rolę</button></div>
+              </article>
+              <article id="admin-member-view" class="admin-card admin-view" aria-labelledby="admin-member-title" hidden>
+                <h2 id="admin-member-title">Członkowie i moderacja</h2>
+                <form id="member-search"><input id="member-query" minlength="2" maxlength="40" placeholder="Nazwa użytkownika" aria-label="Nazwa użytkownika" required><button class="button quiet">Szukaj</button></form>
+                <div id="member-tools" hidden><label>Osoba<select id="admin-members"></select></label><label>Rola do nadania lub zdjęcia<select id="member-role"></select></label><div class="admin-controls"><button id="role-add" class="button quiet" type="button">Nadaj wybraną rolę</button><button id="role-remove" class="button quiet" type="button">Zdejmij wybraną rolę</button></div>
                   <form id="member-moderation"><label>Akcja<select id="mod-action"><option value="timeout">Wycisz na 10 minut</option><option value="untimeout">Zdejmij wyciszenie</option><option value="kick">Wyrzuć z serwera</option><option value="ban">Zbanuj na serwerze</option></select></label><label>Powód <input id="mod-reason" minlength="3" maxlength="280" required></label><button class="button danger">Wykonaj akcję</button></form>
                 </div>
               </article>
