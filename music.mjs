@@ -25,7 +25,7 @@ const videoId = /^[a-zA-Z0-9_-]{11}$/;
 const run = promisify(execFile);
 const ytDlp = process.env.DISCORD_YT_DLP || 'yt-dlp';
 const ytOptions = ['--ignore-config', '--no-cache-dir', '--js-runtimes', 'node', '--no-warnings',
-  '--socket-timeout', '7', '--retries', '0', '--no-playlist'];
+  '--socket-timeout', '7', '--retries', '0', '--no-playlist', '--force-ipv4'];
 const ytFormat = ['-f', 'bestaudio[protocol=https]'];
 const youtubeUrl = (id) => `https://www.youtube.com/watch?v=${id}`;
 const base = (value) => String(value ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
@@ -148,9 +148,13 @@ async function youtubeSearch(query, info) {
     matches(info, item.title, [item.channel, item.uploader], item.duration));
 }
 
+async function verifiedVideo(id) {
+  return fromVideo(await youtubeData([...ytFormat, '--check-formats', '--dump-single-json', '--skip-download'], youtubeUrl(id)));
+}
+
 async function findTrack(query, info) {
-  const video = await youtubeSearch(query, info).catch(() => undefined);
-  return fromVideo(video) ?? await audiusTrack(undefined, query, info);
+  const video = await youtubeSearch(query, info).then((result) => result && verifiedVideo(result.id)).catch(() => undefined);
+  return video ?? await audiusTrack(undefined, query, info);
 }
 
 export async function findMusic(input, capacity = 1) {
@@ -161,8 +165,7 @@ export async function findMusic(input, capacity = 1) {
     return { tracks: [track], skipped: 0 };
   }
   if (link.source === 'YouTube') {
-    const track = fromVideo(await youtubeData([...ytFormat, '--dump-single-json', '--skip-download'],
-      youtubeUrl(link.id)).catch(() => undefined));
+    const track = await verifiedVideo(link.id).catch(() => undefined);
     if (track) return { tracks: [track], skipped: 0 };
     const info = await youtubeInfo(link.id);
     const alternative = await audiusTrack(undefined, `${info.artist} ${info.title}`, info);
@@ -205,9 +208,9 @@ export async function openMusicStream(id, signal) {
 const button = (action, label, style) => new ButtonBuilder().setCustomId(prefix + action).setLabel(label).setStyle(style);
 const listing = (track) => `**${safe(track.artist)} – ${safe(track.title)}** · [${track.source}](<${track.url}>)`;
 
-function youtubeStream(track, signal) {
+function youtubeStream(track, signal, diagnostics = false) {
   return spawn(ytDlp, [...ytOptions, ...ytFormat, '--quiet', '-o', '-', '--', youtubeUrl(track.id)],
-    { stdio: ['ignore', 'pipe', 'ignore'], signal });
+    { stdio: ['ignore', 'pipe', diagnostics ? 'pipe' : 'ignore'], signal });
 }
 
 export function createMusic({ client, logError }) {
@@ -279,9 +282,11 @@ export function createMusic({ client, logError }) {
     console.log(`Panel muzyczny gotowy: kanał ${channel.id}, wiadomość ${panel.id}.`);
     const probe = process.env.DISCORD_MUSIC_PROBE;
     if (videoId.test(probe ?? '')) {
-      const signal = AbortSignal.timeout(15_000);
-      const child = youtubeStream({ id: probe }, signal);
+      const signal = AbortSignal.timeout(25_000);
+      const child = youtubeStream({ id: probe }, signal, true);
       child.once('error', () => {});
+      let diagnostic = '';
+      child.stderr.on('data', (bytes) => { diagnostic = (diagnostic + bytes).slice(-3000); });
       try {
         for await (const bytes of child.stdout) {
           if (bytes.length) {
@@ -289,7 +294,15 @@ export function createMusic({ client, logError }) {
             return;
           }
         }
-        console.warn('Test muzyki: YouTube nie zwrócił dźwięku na Railway.');
+        const reasons = [
+          [/sign in|not a bot|confirm your age/i, 'YouTube wymaga logowania'],
+          [/HTTP Error (403|429)/i, 'YouTube odrzucił żądanie HTTP'],
+          [/not available|not playable|requested format/i, 'brak formatu do odtwarzania'],
+          [/connection|timed out|network/i, 'błąd połączenia'],
+        ];
+        const reason = reasons.find(([pattern]) => pattern.test(diagnostic))?.[1] ??
+          (signal.aborted ? 'przekroczono czas' : diagnostic.replace(/https?:\/\/\S+/g, '[adres]').trim().slice(0, 320));
+        console.warn(`Test muzyki: YouTube nie zwrócił dźwięku na Railway. ${reason}`);
       } finally {
         child.kill();
       }
