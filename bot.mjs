@@ -3,7 +3,7 @@ import {
   Routes, SlashCommandBuilder,
 } from 'discord.js';
 import { categoryLabel, channelLabel, roleMenus, roles } from './plan.mjs';
-import { clearRole, menuPrefix } from './role-panel.mjs';
+import { clearRole, menuPrefix, refreshRoleMenu } from './role-panel.mjs';
 import { cleanupCommand, createCleanup } from './cleanup.mjs';
 import { controls, manualRoles, moderationButtons, panelModal, verificationButton } from './panels.mjs';
 import { boostSystemSettings, createSecurity, securityCommands } from './security.mjs';
@@ -535,6 +535,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error(startupSummary);
   }
   await security.prepareMemberNotices(guild).catch(logError);
+  await refreshRoleMenu(guild, journal.state).catch(logError);
   if (music) await withConfiguration(() => music.setup(guild, journal)).catch((error) => {
     if (error instanceof SetupError) console.warn(error.message);
     else logError(error);
