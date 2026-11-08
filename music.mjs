@@ -1,6 +1,7 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { promisify } from 'node:util';
 import {
   AudioPlayerStatus, VoiceConnectionStatus, createAudioPlayer, createAudioResource,
   entersState, joinVoiceChannel, StreamType,
@@ -14,33 +15,46 @@ import { musicChannelKey as key } from './plan.mjs';
 
 const prefix = 'community:music:';
 const channelName = '🎵│muzyka';
-const queueLimit = 15;
+const queueLimit = 50;
+const importLimit = 20;
 const api = 'https://api.audius.co/v1';
 const noMentions = { parse: [] };
 const inputLink = 'link';
 const trackId = /^[a-zA-Z0-9]{3,30}$/;
+const videoId = /^[a-zA-Z0-9_-]{11}$/;
+const run = promisify(execFile);
+const ytDlp = process.env.DISCORD_YT_DLP || 'yt-dlp';
+const ytOptions = ['--ignore-config', '--no-cache-dir', '--js-runtimes', 'node', '--no-warnings',
+  '--socket-timeout', '7', '--retries', '0', '--no-playlist'];
+const ytFormat = ['-f', 'bestaudio[protocol=https]'];
+const youtubeUrl = (id) => `https://www.youtube.com/watch?v=${id}`;
 const base = (value) => String(value ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 const cleanVideoTitle = (value) => value.replace(/\s*[[(](?:(?:official )?(?:music video|video|audio|lyric video)|lyrics|visualizer)[\])]/gi, '').trim();
 const safe = (value) => escapeMarkdown(String(value).slice(0, 100));
 
 function readLink(value) {
   let url;
-  try { url = new URL(value.trim()); } catch { throw new SetupError('Wklej pełny link HTTPS do pojedynczego utworu.'); }
+  const text = value.trim();
+  if (!text) throw new SetupError('Wpisz tytuł albo wklej link.');
+  try { url = new URL(text); } catch {
+    if (/^\S+\.(?:com|co|be)\//i.test(text)) throw new SetupError('Wklej link razem z https://.');
+    return { source: 'search', query: text.slice(0, 120) };
+  }
   if (url.protocol !== 'https:' || url.username || url.password || url.port) throw new SetupError('Użyj linku HTTPS.');
   if (url.hostname === 'open.spotify.com') {
-    const id = /^\/(?:intl-[a-z-]+\/)?track\/([a-zA-Z0-9]{22})\/?$/.exec(url.pathname)?.[1];
-    if (id) return { source: 'Spotify', id };
+    const match = /^\/(?:intl-[a-z-]+\/)?(track|album|playlist)\/([a-zA-Z0-9]{22})\/?$/.exec(url.pathname);
+    if (match) return { source: 'Spotify', kind: match[1], id: match[2] };
   }
   if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'].includes(url.hostname)) {
     const id = url.pathname === '/watch' && url.hostname !== 'youtu.be'
       ? url.searchParams.get('v')
       : (url.hostname === 'youtu.be' ? /^\/([\w-]+)\/?$/ : /^\/(?:shorts|live)\/([\w-]+)\/?$/).exec(url.pathname)?.[1];
-    if (/^[a-zA-Z0-9_-]{11}$/.test(id ?? '')) return { source: 'YouTube', id };
+    if (videoId.test(id ?? '')) return { source: 'YouTube', id };
   }
   if (['audius.co', 'www.audius.co'].includes(url.hostname) && /^\/[^/]+\/[^/]+\/?$/.test(url.pathname)) {
     return { source: 'Audius', url: `https://audius.co${url.pathname}` };
   }
-  throw new SetupError('Wklej link do pojedynczego utworu z YouTube, Spotify lub Audius.');
+  throw new SetupError('Wklej link do utworu YouTube, Spotify lub Audius albo do albumu lub playlisty Spotify.');
 }
 
 async function request(url) {
@@ -61,14 +75,19 @@ async function resolveAudius(target) {
   return (await request(next)).json();
 }
 
-async function spotifyInfo(id) {
-  const response = await request(`https://open.spotify.com/embed/track/${id}`);
+async function spotifyTracks({ kind, id }) {
+  const response = await request(`https://open.spotify.com/embed/${kind}/${id}`);
   const page = await response.text();
   const data = /<script\b[^>]*\bid="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(page)?.[1];
   const entity = data && JSON.parse(data).props?.pageProps?.state?.data?.entity;
-  const artist = entity?.artists?.[0]?.name;
-  if (!entity?.title || !artist) throw new SetupError('Spotify nie zwrócił tytułu i wykonawcy dla tego linku.');
-  return { title: entity.title, artist, seconds: entity.duration / 1000 };
+  const tracks = kind === 'track' ? [entity] : entity?.trackList ?? [];
+  const available = tracks.filter((track) => track?.title && /^spotify:track:/.test(track.uri) &&
+    (track.artists?.[0]?.name || track.subtitle));
+  if (!available.length) throw new SetupError('Spotify nie udostępnił utworów dla tego linku.');
+  return available.map((track) => ({
+    title: track.title, artist: track.artists?.[0]?.name ?? track.subtitle.split(',\u00a0')[0].trim(),
+    seconds: track.duration / 1000,
+  }));
 }
 
 async function youtubeInfo(id) {
@@ -89,27 +108,82 @@ function playable(track) {
     typeof track.permalink === 'string' && /^\/[^/]+\/[^/]+$/.test(track.permalink);
 }
 
-export async function findMusic(link) {
-  const input = readLink(link);
-  const target = new URL(`${api}/${input.source === 'Audius' ? 'resolve' : 'tracks/search'}`);
-  let info;
-  if (input.source === 'Audius') {
-    target.searchParams.set('url', input.url);
-  } else {
-    info = await (input.source === 'Spotify' ? spotifyInfo(input.id) : youtubeInfo(input.id));
-    target.search = new URLSearchParams({ query: `${info.artist} ${info.title}`.slice(0, 200), limit: '15' });
+function matches(info, title, artists, seconds) {
+  const titleKey = base(cleanVideoTitle(title));
+  const artistKey = base(info.artist);
+  if (!artistKey || !titleKey || (Number.isFinite(info.seconds) && Math.abs(info.seconds - seconds) > 12)) return false;
+  return titleKey === artistKey + base(info.title) ||
+    (titleKey === base(info.title) && artists.some((artist) =>
+      base(artist?.replace(/\s+-\s+Topic$|VEVO$/i, '')) === artistKey));
+}
+
+async function audiusTrack(url, query, info) {
+  const target = new URL(`${api}/${url ? 'resolve' : 'tracks/search'}`);
+  target.search = url ? new URLSearchParams({ url }) : new URLSearchParams({ query, limit: '15' });
+  const { data } = url ? await resolveAudius(target) : await (await request(target)).json();
+  const track = (Array.isArray(data) ? data : [data]).find((candidate) => playable(candidate) &&
+    (!info || matches(info, candidate.title, [candidate.user.name, candidate.user.handle], candidate.duration)));
+  if (!track) return;
+  return { source: 'Audius', id: track.id, title: track.title, artist: track.user.name,
+    url: new URL(track.permalink, 'https://audius.co').href };
+}
+
+function fromVideo(track) {
+  if (!videoId.test(track?.id ?? '') || typeof track.title !== 'string' || !track.duration ||
+    track.duration > 900 || track.live_status === 'is_live' || track.availability === 'needs_auth') return;
+  return { source: 'YouTube', id: track.id, title: track.title, artist: track.channel ?? track.uploader ?? 'YouTube',
+    url: youtubeUrl(track.id) };
+}
+
+async function youtubeData(args, target) {
+  const { stdout } = await run(ytDlp, [...ytOptions, ...args, '--', target], {
+    timeout: 14_000, maxBuffer: 2 * 1024 * 1024, windowsHide: true,
+  });
+  return JSON.parse(stdout);
+}
+
+async function youtubeSearch(query, info) {
+  const results = await youtubeData(['--flat-playlist', '--dump-single-json'], `ytsearch8:${query}`);
+  return results.entries?.filter((item) => fromVideo(item)).find((item) => !info ||
+    matches(info, item.title, [item.channel, item.uploader], item.duration));
+}
+
+async function findTrack(query, info) {
+  const video = await youtubeSearch(query, info).catch(() => undefined);
+  return fromVideo(video) ?? await audiusTrack(undefined, query, info);
+}
+
+export async function findMusic(input, capacity = 1) {
+  const link = readLink(input);
+  if (link.source === 'Audius') {
+    const track = await audiusTrack(link.url);
+    if (!track) throw new SetupError('Ten utwór Audius jest niedostępny lub ma ponad 15 minut.');
+    return { tracks: [track], skipped: 0 };
   }
-  const { data } = input.source === 'Audius' ? await resolveAudius(target) : await (await request(target)).json();
-  const track = (Array.isArray(data) ? data : [data]).find((candidate) =>
-    playable(candidate) && (!info || (
-      [base(info.title), base(info.artist + info.title)].includes(base(candidate.title)) &&
-      [candidate.user.name, candidate.user.handle].some((artist) => base(artist) === base(info.artist)) &&
-      (!Number.isFinite(info.seconds) || Math.abs(candidate.duration - info.seconds) <= 10)
-    )));
-  if (!track) throw new SetupError(info
-    ? `Audius nie znalazł pasującego nagrania dla **${safe(info.artist)} – ${safe(info.title)}**.`
-    : 'Ten utwór Audius jest niedostępny lub ma ponad 15 minut.');
-  return { id: track.id, title: track.title, artist: track.user.name, url: new URL(track.permalink, 'https://audius.co').href };
+  if (link.source === 'YouTube') {
+    const track = fromVideo(await youtubeData([...ytFormat, '--dump-single-json', '--skip-download'],
+      youtubeUrl(link.id)).catch(() => undefined));
+    if (track) return { tracks: [track], skipped: 0 };
+    const info = await youtubeInfo(link.id);
+    const alternative = await audiusTrack(undefined, `${info.artist} ${info.title}`, info);
+    if (alternative) return { tracks: [alternative], skipped: 0 };
+    throw new SetupError('YouTube nie udostępnił botowi dźwięku, a w Audius nie ma pasującego nagrania.');
+  }
+  if (link.source === 'search') {
+    const track = await findTrack(link.query);
+    if (!track) throw new SetupError('Nie znalazłem utworu. Spróbuj podać wykonawcę i tytuł.');
+    return { tracks: [track], skipped: 0 };
+  }
+  const items = await spotifyTracks(link);
+  const selected = items.slice(0, Math.min(capacity, importLimit));
+  const found = [];
+  for (let i = 0; i < selected.length; i += 3) {
+    const batch = await Promise.allSettled(selected.slice(i, i + 3).map((info) =>
+      findTrack(`${info.artist} ${info.title}`, info)));
+    found.push(...batch.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : []));
+  }
+  if (!found.length) throw new SetupError('Nie znalazłem dostępnego nagrania dla utworów z tego linku Spotify.');
+  return { tracks: found, skipped: items.length - found.length };
 }
 
 export async function openMusicStream(id, signal) {
@@ -129,7 +203,12 @@ export async function openMusicStream(id, signal) {
 }
 
 const button = (action, label, style) => new ButtonBuilder().setCustomId(prefix + action).setLabel(label).setStyle(style);
-const listing = (track) => `**${safe(track.artist)} – ${safe(track.title)}** · [Audius](<${track.url}>)`;
+const listing = (track) => `**${safe(track.artist)} – ${safe(track.title)}** · [${track.source}](<${track.url}>)`;
+
+function youtubeStream(track, signal) {
+  return spawn(ytDlp, [...ytOptions, ...ytFormat, '--quiet', '-o', '-', '--', youtubeUrl(track.id)],
+    { stdio: ['ignore', 'pipe', 'ignore'], signal });
+}
 
 export function createMusic({ client, logError }) {
   let channel;
@@ -146,14 +225,14 @@ export function createMusic({ client, logError }) {
     return { allowedMentions: noMentions, embeds: [new EmbedBuilder()
       .setColor(0x836CFF).setTitle('🎵 Muzyka · Po Godzinach')
       .setDescription([
-        'Wejdź na ten kanał głosowy i kliknij **Wklej link**. Obsługuję pojedyncze utwory z YouTube, Spotify i Audius.',
-        'Dźwięk odtwarzam z katalogu Audius, gdy znajdę pasujące nagranie.',
+        'Wejdź na ten kanał głosowy i kliknij **Dodaj utwór**. Wpisz tytuł lub wklej link do YouTube, Spotify albo Audius.',
+        'Z albumów i playlist Spotify dodaję maksymalnie 20 utworów na raz. Przy każdym utworze pokazuję źródło nagrania.',
         current ? `🎶 ${playback[session.player.state.status] ?? 'Ładuję'} · ${listing(current)}` :
           session ? '🔌 Łączę się z kanałem głosowym.' : '🔇 Nic teraz nie gra.',
         `📋 Utwory w kolejce · **${session?.queue.length ?? 0}**`,
         ...(status ? [status] : []),
       ].join('\n\n'))], components: [new ActionRowBuilder().addComponents(
-      button('add', 'Wklej link', ButtonStyle.Primary), button('queue', 'Kolejka', ButtonStyle.Secondary),
+      button('add', 'Dodaj utwór', ButtonStyle.Primary), button('queue', 'Kolejka', ButtonStyle.Secondary),
       button('pause', 'Pauza / Wznów', ButtonStyle.Secondary), button('skip', 'Pomiń', ButtonStyle.Secondary),
       button('stop', 'Stop', ButtonStyle.Danger),
     )] };
@@ -198,6 +277,23 @@ export function createMusic({ client, logError }) {
     state.messages[key] = panel.id;
     await save();
     console.log(`Panel muzyczny gotowy: kanał ${channel.id}, wiadomość ${panel.id}.`);
+    const probe = process.env.DISCORD_MUSIC_PROBE;
+    if (videoId.test(probe ?? '')) {
+      const signal = AbortSignal.timeout(15_000);
+      const child = youtubeStream({ id: probe }, signal);
+      child.once('error', () => {});
+      try {
+        for await (const bytes of child.stdout) {
+          if (bytes.length) {
+            console.log('Test muzyki: odebrano dźwięk YouTube na Railway.');
+            return;
+          }
+        }
+        console.warn('Test muzyki: YouTube nie zwrócił dźwięku na Railway.');
+      } finally {
+        child.kill();
+      }
+    }
   }
 
   function end(active) {
@@ -230,6 +326,13 @@ export function createMusic({ client, logError }) {
     ffmpeg.once('error', fail);
     ffmpeg.once('exit', (code) => { if (code !== 0) fail(); });
     const input = async () => {
+      if (track.source === 'YouTube') {
+        const source = youtubeStream(track, abort.signal);
+        source.once('error', fail);
+        source.once('exit', (code) => { if (code !== 0) fail(); });
+        await pipeline(source.stdout, ffmpeg.stdin, { signal: abort.signal });
+        return;
+      }
       const stream = await openMusicStream(track.id, AbortSignal.any([abort.signal, AbortSignal.timeout(20 * 60_000)]));
       await pipeline(Readable.fromWeb(stream), ffmpeg.stdin, { signal: abort.signal });
     };
@@ -241,17 +344,20 @@ export function createMusic({ client, logError }) {
     update();
   }
 
-  async function enqueue(track) {
+  async function enqueue(tracks) {
+    const accepted = tracks.slice(0, queueLimit - (session?.queue.length ?? 0));
+    if (!accepted.length) throw new SetupError('Kolejka jest pełna.');
     if (session) {
-      if (session.queue.length >= queueLimit) throw new SetupError('Kolejka jest pełna.');
-      session.queue.push(track);
+      session.queue.push(...accepted);
       update();
-      return session.ready;
+      await session.ready;
+      return accepted.length;
     }
     const player = createAudioPlayer();
     const connection = joinVoiceChannel({ guildId: channel.guild.id, channelId: channel.id,
       adapterCreator: channel.guild.voiceAdapterCreator, selfDeaf: true });
-    const active = { player, connection, queue: [track] };
+    const active = { player, connection, queue: accepted };
+    const added = accepted.length;
     session = active;
     update();
     player.on(AudioPlayerStatus.Idle, (old) => { if (old.resource?.metadata === active.current) advance(active); });
@@ -273,7 +379,8 @@ export function createMusic({ client, logError }) {
       if (!(error instanceof SetupError)) logError(error);
       throw new SetupError('Bot nie zdołał połączyć się z kanałem głosowym.');
     });
-    return active.ready;
+    await active.ready;
+    return added;
   }
 
   client.on(Events.VoiceStateUpdate, (before, after) => {
@@ -294,7 +401,7 @@ export function createMusic({ client, logError }) {
       if (interaction.isButton() && action === 'add') {
         await interaction.showModal(new ModalBuilder().setCustomId(prefix + 'submit').setTitle('Dodaj utwór do kolejki')
           .addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId(inputLink)
-            .setLabel('Link do utworu').setStyle(TextInputStyle.Short).setMaxLength(400).setRequired(true))));
+            .setLabel('Tytuł lub link').setStyle(TextInputStyle.Short).setMaxLength(400).setRequired(true))));
       } else if (interaction.isModalSubmit() && action === 'submit') {
         const id = interaction.user.id;
         const now = Date.now();
@@ -305,10 +412,14 @@ export function createMusic({ client, logError }) {
         lastRequest.set(id, now);
         try {
           await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-          const track = await findMusic(interaction.fields.getTextInputValue(inputLink));
+          const capacity = queueLimit - (session?.queue.length ?? 0);
+          if (!capacity) throw new SetupError('Kolejka jest pełna.');
+          const { tracks, skipped } = await findMusic(interaction.fields.getTextInputValue(inputLink), capacity);
           if (interaction.member.voice.channelId !== channel.id) throw new SetupError('Wróć na kanał głosowy przed dodaniem utworu.');
-          await enqueue(track);
-          await reply(`🎵 Dodano ${listing(track)}.`);
+          const added = await enqueue(tracks);
+          const omitted = skipped + tracks.length - added;
+          const summary = added === 1 ? listing(tracks[0]) : `**${added}** utworów do kolejki`;
+          await reply(`🎵 Dodano ${summary}.${omitted ? ` Pominięto: ${omitted} (brak nagrania lub limit importu).` : ''}`);
         } finally {
           pending.delete(id);
           for (const [user, time] of lastRequest) if (now - time >= 5000) lastRequest.delete(user);
