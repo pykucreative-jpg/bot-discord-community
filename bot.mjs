@@ -5,7 +5,7 @@ import {
 import { categoryLabel, channelLabel, roleMenus, roles } from './plan.mjs';
 import { clearRole, menuPrefix, refreshRoleMenu } from './role-panel.mjs';
 import { cleanupCommand, createCleanup } from './cleanup.mjs';
-import { controls, manualRoles, moderationButtons, panelModal, verificationButton } from './panels.mjs';
+import { communityButtons, controls, manualRoles, moderationButtons, panelModal, verificationButton } from './panels.mjs';
 import { boostSystemSettings, createSecurity, securityCommands } from './security.mjs';
 import { createTickets } from './tickets.mjs';
 import { createMusic, removeMusicPanel } from './music.mjs';
@@ -15,7 +15,7 @@ import { createWebAdmin, webLoginCommand } from './web-admin.mjs';
 import { giveStaffPoint, setupStaffPoints, staffPointCommands } from './staff-points.mjs';
 import {
   applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
-  restrictChannelMentions, restrictRoleMentions,
+  privateModerationChannel, restrictChannelMentions, restrictRoleMentions,
   SetupError, styleManagedRoles, withSetupLock,
 } from './setup.mjs';
 
@@ -559,11 +559,35 @@ client.once(Events.ClientReady, async (readyClient) => {
   }
   await security.prepareMemberNotices(guild).catch(logError);
   await withConfiguration(async () => {
+    const state = journal.state;
+    for (const scope of ['moderation', 'staff-applications']) {
+      const plan = await inspect(guild, state, scope);
+      await applyChannels(guild, journal, plan);
+    }
+    await privateModerationChannel(guild, state, { name: 'staff-records' });
+    await privateModerationChannel(guild, state, { name: 'staff-applications-archive' });
+    const start = await guild.channels.fetch(state.channels['start-tutaj'], { force: true });
+    const message = await start.messages.fetch({ message: state.messages['start-tutaj'], force: true });
+    if (message.author.id !== guild.client.user.id) throw new SetupError('Karta startowa nie należy do bota.');
+    const row = communityButtons();
+    const ids = (components) => components.map(({ customId }) => customId).join(',');
+    if (ids(message.components[0]?.components ?? []) !== ids(row.toJSON().components.map(({ custom_id }) => ({ customId: custom_id })))) {
+      await message.edit({ components: [row], allowedMentions: { parse: [] } });
+    }
+    console.log(`Rekrutacja gotowa: kategoria ${state.categories['staff-applications']}, archiwum ${state.channels['staff-applications-archive']}. Kanał punktów administracji: ${state.channels['staff-records']}.`);
+  }).catch((error) => {
+    if (error instanceof SetupError) console.warn('Strefa administracji:', error.message);
+    else logError(error);
+  });
+  await withConfiguration(async () => {
     const [mentionRoles, mentionChannels] = await Promise.all([guild.roles.fetch(), guild.channels.fetch()]);
     let blockedMentionUpdates = 0;
-    const mentionError = (error) => { blockedMentionUpdates++; logError(error); };
-    for (const role of mentionRoles.values()) await restrictRoleMentions(role, journal.state).catch(mentionError);
-    for (const channel of mentionChannels.values()) await restrictChannelMentions(channel, journal.state).catch(mentionError);
+    const mentionError = (label, error) => {
+      blockedMentionUpdates++;
+      console.warn(`Uprawnienia oznaczeń, ${label}: ${error instanceof SetupError ? error.message : error.code ?? error.name}`);
+    };
+    for (const role of mentionRoles.values()) await restrictRoleMentions(role, journal.state).catch((error) => mentionError(role.name, error));
+    for (const channel of mentionChannels.values()) await restrictChannelMentions(channel, journal.state).catch((error) => mentionError(channel?.name, error));
     console.log(`Oznaczenia @everyone i @here: moderacja i administratorzy. Błędy zmian: ${blockedMentionUpdates}.`);
   }).catch(logError);
   await withConfiguration(() => setupStaffPoints(guild, journal)).then(() => {
