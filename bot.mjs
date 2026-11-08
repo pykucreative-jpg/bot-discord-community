@@ -528,6 +528,7 @@ client.once(Events.ClientReady, async (readyClient) => {
       : 'Automatyczna konfiguracja została przerwana. Sprawdź połączenie i uprawnienia bota.';
     console.error(startupSummary);
   }
+  await security.prepareMemberNotices(guild).catch(logError);
 });
 
 try {

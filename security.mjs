@@ -17,8 +17,7 @@ const clearPreviewDuration = 5 * 60_000;
 const NO_MENTIONS = { parse: [] };
 const memberNoticeChannels = ['witamy', 'pozegnania'];
 const noticePermissions = ['ViewChannel', 'ReadMessageHistory', 'SendMessages', 'EmbedLinks'];
-const noticeTitles = ['👋 Witaj w Centrum Graczy!', '🌙 Do zobaczenia!'];
-const memberLogTitles = ['📥 Wejście na serwer', '📤 Opuszczenie serwera'];
+const departureTitle = '📤 Opuszczenie serwera';
 const auditActions = new Map(Object.entries({
   GuildUpdate: 'Zmieniono ustawienia serwera',
   ChannelCreate: 'Utworzono kanał', ChannelUpdate: 'Zmieniono ustawienia kanału', ChannelDelete: 'Usunięto kanał',
@@ -219,44 +218,86 @@ export function createSecurity({ client, guildId, getState, logError }) {
     throw new SetupError(`Nie można jednoznacznie odnaleźć kanału ${name}.`);
   }
 
-  on(Events.ClientReady, async () => {
-    const guild = await client.guilds.fetch(guildId);
+  async function checkNoticeChannel(guild, name, bot) {
+    let channel = await noticeChannel(guild, name, true);
+    const permissions = channel.permissionsFor(bot);
+    const missing = noticePermissions.filter((permission) => !permissions?.has(permission));
+    if (missing.length) {
+      await channel.permissionOverwrites.edit(bot, Object.fromEntries(missing.map((permission) => [permission, true])),
+        { reason: 'Przywrócenie powitań i pożegnań bota' });
+      channel = await noticeChannel(guild, name, true);
+    }
+    if (!channel.permissionsFor(bot)?.has(noticePermissions)) throw new SetupError('Brak uprawnień po zmianie.');
+    console.log(`Powiadomienia ${name}: gotowe w kanale ${channel.id}.`);
+    return channel;
+  }
+
+  function welcomeCard(userId) {
+    const rules = getState().channels.regulamin;
+    return card('👋 Witaj w Centrum Graczy!',
+      `Hej <@${userId}>! Fajnie, że do nas dołączasz. Przeczytaj i zaakceptuj zasady w <#${rules}>, żeby odblokować serwer. Do zobaczenia w grze! 🎮`, 0x2CA58D);
+  }
+
+  async function recoverMemberNotices(guild, welcome, farewell, from, to) {
+    const inside = (timestamp) => timestamp >= from && timestamp < to;
+    const noticeHistory = async (channel) => {
+      const messages = await channel.messages.fetch({ limit: 100 });
+      if (messages.size === 100 && messages.last().createdTimestamp >= from) {
+        throw new SetupError('Historia kanału nie obejmuje całego okresu odzyskiwania.');
+      }
+      return messages;
+    };
+    const logChannel = await privateModerationChannel(guild, getState());
+    const [welcomes, farewells, entries, members] = await Promise.all([
+      noticeHistory(welcome), noticeHistory(farewell), noticeHistory(logChannel), guild.members.list({ limit: 1000 }),
+    ]);
+    let joined = 0;
+    let left = 0;
+    const recover = (channel, embed, timestamp, footer) => channel.send({
+      embeds: [embed.setTimestamp(timestamp).setFooter({ text: footer })], allowedMentions: NO_MENTIONS,
+    });
+    for (const member of members.values()) {
+      const timestamp = member.joinedTimestamp;
+      if (member.user.bot || !inside(timestamp)) continue;
+      if (welcomes.some((message) =>
+        message.createdTimestamp >= timestamp - 1000 && (
+          (message.type === MessageType.UserJoin && message.author.id === member.id) ||
+          (message.author.id === client.user.id && message.embeds.some((embed) =>
+            /witaj|dobrze, że jesteś/i.test(embed.title ?? '') && embed.description?.includes(`<@${member.id}>`)))))) continue;
+      await recover(welcome, welcomeCard(member.id), timestamp, 'Uzupełnione powitanie');
+      joined++;
+    }
+    for (const message of [...entries.values()].reverse()) {
+      if (message.author.id !== client.user.id || !inside(message.createdTimestamp)) continue;
+      const embed = message.embeds.find(({ title }) => title === departureTitle);
+      const name = embed?.description?.split('\n')[0];
+      if (!name || name === 'Nazwa użytkownika niedostępna') continue;
+      if (farewells.some((existing) => existing.author.id === client.user.id && existing.embeds.some((item) =>
+        /do zobaczenia/i.test(item.title ?? '') && (
+          (item.footer?.text === 'Uzupełnione pożegnanie' && Date.parse(item.timestamp) === message.createdTimestamp) ||
+          Math.abs(existing.createdTimestamp - message.createdTimestamp) < 30_000)))) continue;
+      await recover(farewell, card('🌙 Do zobaczenia!',
+        `**${name}** opuścił(a) serwer. Dzięki za wspólny czas! 🎮`, 0x7767AF),
+      message.createdTimestamp, 'Uzupełnione pożegnanie');
+      left++;
+    }
+    console.log(`Uzupełnienie powiadomień zakończone: powitania ${joined}, pożegnania ${left}.`);
+  }
+
+  async function prepareMemberNotices(guild) {
     if (!active(guild)) return;
     const bot = await guild.members.fetchMe();
-    for (const name of memberNoticeChannels) {
-      try {
-        let channel = await noticeChannel(guild, name, true);
-        const permissions = channel.permissionsFor(bot);
-        const missing = noticePermissions.filter((permission) => !permissions?.has(permission));
-        if (missing.length) {
-          console.warn(`Powiadomienia ${name}: brak ${missing.join(', ')}.`);
-          await channel.permissionOverwrites.edit(bot, Object.fromEntries(missing.map((permission) => [permission, true])),
-            { reason: 'Przywrócenie powitań i pożegnań bota' });
-          channel = await noticeChannel(guild, name, true);
-        }
-        if (!channel.permissionsFor(bot)?.has(noticePermissions)) throw new SetupError('Brak uprawnień po zmianie.');
-        const history = await channel.messages.fetch({ limit: 100 });
-        const timestamps = history.filter((message) => message.author.id === client.user.id &&
-          message.embeds.some((embed) => embed.title === noticeTitles[memberNoticeChannels.indexOf(name)]))
-          .map((message) => new Date(message.createdTimestamp).toISOString());
-        console.log(`Powiadomienia ${name}: gotowe w ${channel.id}, typ ${channel.type}; historia ${timestamps.length} [${timestamps.slice(0, 10).join(', ')}].`);
-      } catch (error) {
+    const [welcome, farewell] = await Promise.all(memberNoticeChannels.map((name) =>
+      checkNoticeChannel(guild, name, bot).catch((error) => {
         console.warn(`Powiadomienia ${name}: kontrola kanału nie powiodła się.`);
         logError(error);
-      }
+      })));
+    const from = Date.parse(process.env.DISCORD_MEMBER_NOTICE_RECOVERY_FROM);
+    const to = Date.parse(process.env.DISCORD_MEMBER_NOTICE_RECOVERY_TO);
+    if (welcome && farewell && from < to && to <= Date.now()) {
+      await recoverMemberNotices(guild, welcome, farewell, from, to);
     }
-    const logChannel = await privateModerationChannel(guild, getState());
-    const logMessages = await logChannel.messages.fetch({ limit: 100 });
-    const events = logMessages.filter((message) => message.author.id === client.user.id &&
-      message.embeds.some((embed) => memberLogTitles.includes(embed.title)));
-    console.log(`Historia zdarzeń członków: ${events.map((message) => {
-      const embed = message.embeds.find((item) => memberLogTitles.includes(item.title));
-      return `${memberLogTitles.indexOf(embed.title)}:${new Date(message.createdTimestamp).toISOString()}`;
-    }).join(', ') || 'brak zdarzeń w ostatnich 100 zapisach'}.`);
-    const members = await guild.members.fetch();
-    console.log(`Daty dołączenia obecnych osób: ${members.filter((member) => !member.user.bot && member.joinedTimestamp)
-      .map((member) => new Date(member.joinedTimestamp).toISOString()).sort().slice(-10).join(', ')}.`);
-  });
+  }
 
   async function post(guild, name, embed) {
     const state = getState();
@@ -568,8 +609,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
         if (alert) await log(guild, 'log-ochrona', '🚨 Wykryto falę dołączeń',
           `W ciągu 20 sekund dołączyło ${joins.size} różnych osób, w tym ${freshCount} z kontem młodszym niż 7 dni. Ręczna ocena weryfikacji przez 10 minut.`, 0xE85D75);
       }
-      const welcome = await post(guild, 'witamy', card('👋 Witaj w Centrum Graczy!',
-        `Hej <@${user.id}>! Fajnie, że do nas dołączasz. Przeczytaj i zaakceptuj zasady w <#${getState().channels.regulamin}>, żeby odblokować serwer. Do zobaczenia w grze! 🎮`, 0x2CA58D));
+      const welcome = await post(guild, 'witamy', welcomeCard(user.id));
       if (welcome) console.log('Wysłano automatyczne powitanie w kanale witamy.');
     }
     const createdAt = Math.floor(user.createdTimestamp / 1000);
@@ -584,7 +624,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
         `**${detail(member.user.username)}** opuścił(a) Centrum Graczy. Dzięki za wspólny czas i powodzenia w kolejnych rozgrywkach! 🎮`, 0x7767AF));
       if (farewell) console.log('Wysłano automatyczne pożegnanie w kanale pozegnania.');
     }
-    await log(member.guild, 'logi-bota', '📤 Opuszczenie serwera', label(member.user));
+    await log(member.guild, 'logi-bota', departureTitle, label(member.user));
   });
   on(Events.GuildMemberUpdate, async (before, after) => {
     if (!active(after.guild) || before.partial || before.premiumSinceTimestamp || !after.premiumSinceTimestamp) return;
@@ -696,6 +736,6 @@ export function createSecurity({ client, guildId, getState, logError }) {
     return `**📊 Statystyki serwera**\n👥 Razem: **${total}**\n🟢 Online: **${online}**\n⚫ Offline: **${offline}**`;
   }
 
-  return { accept, confirmClear, gateRoles, isVerified, log, moderate, previewClear, refreshStats, review,
+  return { accept, confirmClear, gateRoles, isVerified, log, moderate, prepareMemberNotices, previewClear, refreshStats, review,
     statisticsReply, syncPresence };
 }
