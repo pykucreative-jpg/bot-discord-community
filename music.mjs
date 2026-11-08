@@ -10,11 +10,11 @@ import {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, Events, MessageFlags,
   ModalBuilder, OverwriteType, TextInputBuilder, TextInputStyle, escapeMarkdown,
 } from 'discord.js';
-import { SetupError } from './setup.mjs';
-import { musicChannelKey as key } from './plan.mjs';
+import { isStatsChannel, SetupError } from './setup.mjs';
+import { musicChannelKey as oldKey, musicPanelKey as key } from './plan.mjs';
 
 const prefix = 'community:music:';
-const channelName = '🎵│muzyka';
+const channelName = '🎵│panel-muzyki';
 const queueLimit = 50;
 const importLimit = 20;
 const api = 'https://api.audius.co/v1';
@@ -213,7 +213,7 @@ function youtubeStream(track, signal, diagnostics = false) {
     { stdio: ['ignore', 'pipe', diagnostics ? 'pipe' : 'ignore'], signal });
 }
 
-export function createMusic({ client, logError }) {
+export function createMusic({ client, getState, logError }) {
   let channel;
   let panel;
   let session;
@@ -228,7 +228,8 @@ export function createMusic({ client, logError }) {
     return { allowedMentions: noMentions, embeds: [new EmbedBuilder()
       .setColor(0x836CFF).setTitle('🎵 Muzyka · Po Godzinach')
       .setDescription([
-        'Wejdź na ten kanał głosowy i kliknij **Dodaj utwór**. Wpisz tytuł lub wklej link do YouTube, Spotify albo Audius.',
+        'Wejdź na dowolny kanał głosowy i tutaj kliknij **Dodaj utwór**. Bot dołączy tam, gdzie jesteś.',
+        'Wpisz tytuł lub wklej link do YouTube, Spotify albo Audius.',
         'Z albumów i playlist Spotify dodaję maksymalnie 20 utworów na raz. Przy każdym utworze pokazuję źródło nagrania.',
         current ? `🎶 ${playback[session.player.state.status] ?? 'Ładuję'} · ${listing(current)}` :
           session ? '🔌 Łączę się z kanałem głosowym.' : '🔇 Nic teraz nie gra.',
@@ -245,41 +246,53 @@ export function createMusic({ client, logError }) {
     updates = updates.then(() => panel?.edit(payload())).catch(logError);
   }
 
+  const isPanel = (message) => message?.author.id === client.user.id &&
+    message.components.some((row) => row.components.some((item) => item.customId === prefix + 'add'));
+
   async function setup(guild, { state, save }) {
     const parent = state.categories.voice;
     const channels = await guild.channels.fetch();
     if (channels.get(parent)?.type !== ChannelType.GuildCategory) throw new SetupError('Nie znaleziono kategorii głosowej dla muzyki.');
     const saved = channels.get(state.channels[key]);
     const existing = channels.filter((item) => item?.name === channelName && item.parentId === parent);
-    if (existing.size > 1 || (saved && (saved.type !== ChannelType.GuildVoice || saved.parentId !== parent))) {
+    if (existing.size > 1 || (saved && (saved.type !== ChannelType.GuildText || saved.parentId !== parent))) {
       throw new SetupError('Sprawdź kanał muzyczny. Discord zwrócił niejednoznaczne dopasowanie.');
     }
     channel = saved ?? existing.first();
-    if (channel && channel.type !== ChannelType.GuildVoice) throw new SetupError('Kanał muzyczny musi być głosowy.');
-    const access = ['ViewChannel', 'Connect', 'Speak', 'SendMessages', 'ReadMessageHistory', 'EmbedLinks'];
+    if (channel && channel.type !== ChannelType.GuildText) throw new SetupError('Panel muzyczny wymaga kanału tekstowego.');
+    const read = ['ViewChannel', 'ReadMessageHistory'];
+    const access = [...read, 'SendMessages', 'EmbedLinks'];
     const bot = await guild.members.fetchMe();
     if (!channel) {
       if (!state.roles.verified) throw new SetupError('Najpierw skonfiguruj weryfikację serwera.');
       const roles = [...new Set(['verified', 'admin', 'mod', 'helper', 'organizer'].map((role) => state.roles[role]).filter(Boolean))];
-      channel = await guild.channels.create({ name: channelName, type: ChannelType.GuildVoice, parent,
+      channel = await guild.channels.create({ name: channelName, type: ChannelType.GuildText, parent,
         permissionOverwrites: [
-          { id: guild.id, type: OverwriteType.Role, deny: ['ViewChannel'] },
+          { id: guild.id, type: OverwriteType.Role, deny: ['ViewChannel', 'SendMessages', 'CreatePublicThreads', 'CreatePrivateThreads'] },
           { id: bot.id, type: OverwriteType.Member, allow: access },
-          ...roles.map((id) => ({ id, type: OverwriteType.Role, allow: access })),
+          ...roles.map((id) => ({ id, type: OverwriteType.Role, allow: read })),
         ],
         reason: 'Kanał i panel muzyczny',
       });
     }
-    if (!channel.permissionsFor(bot)?.has(access)) throw new SetupError('Bot potrzebuje uprawnień do głosowego i czatu muzycznego.');
+    if (!channel.permissionsFor(bot)?.has(access)) throw new SetupError('Bot potrzebuje dostępu do kanału panelu muzycznego.');
     const messages = await channel.messages.fetch({ limit: 25 });
-    panel = messages.get(state.messages[key]) ?? messages.find((message) => message.author.id === client.user.id &&
-      message.components.some((row) => row.components.some((item) => item.customId === prefix + 'add')));
-    if (panel?.author.id !== client.user.id) panel = undefined;
+    const savedPanel = messages.get(state.messages[key]);
+    panel = isPanel(savedPanel) ? savedPanel : messages.find(isPanel);
     panel = panel ? await panel.edit(payload()) : await channel.send(payload());
     state.channels[key] = channel.id;
     state.messages[key] = panel.id;
     await save();
     console.log(`Panel muzyczny gotowy: kanał ${channel.id}, wiadomość ${panel.id}.`);
+    const oldChannel = channels.get(state.channels[oldKey]);
+    if (oldChannel?.type === ChannelType.GuildVoice && state.messages[oldKey]) {
+      try {
+        const oldPanel = await oldChannel.messages.fetch(state.messages[oldKey]);
+        if (isPanel(oldPanel)) await oldPanel.delete();
+      } catch (error) {
+        if (Number(error.code) !== 10008) logError(error);
+      }
+    }
     const probe = process.env.DISCORD_MUSIC_PROBE;
     if (videoId.test(probe ?? '')) {
       const signal = AbortSignal.timeout(25_000);
@@ -357,19 +370,20 @@ export function createMusic({ client, logError }) {
     update();
   }
 
-  async function enqueue(tracks) {
+  async function enqueue(tracks, voice) {
     const accepted = tracks.slice(0, queueLimit - (session?.queue.length ?? 0));
     if (!accepted.length) throw new SetupError('Kolejka jest pełna.');
     if (session) {
+      if (session.voice.id !== voice.id) throw new SetupError('Muzyka gra już na innym kanale głosowym.');
       session.queue.push(...accepted);
       update();
       await session.ready;
       return accepted.length;
     }
     const player = createAudioPlayer();
-    const connection = joinVoiceChannel({ guildId: channel.guild.id, channelId: channel.id,
-      adapterCreator: channel.guild.voiceAdapterCreator, selfDeaf: true });
-    const active = { player, connection, queue: accepted };
+    const connection = joinVoiceChannel({ guildId: voice.guild.id, channelId: voice.id,
+      adapterCreator: voice.guild.voiceAdapterCreator, selfDeaf: true });
+    const active = { player, connection, voice, queue: accepted };
     const added = accepted.length;
     session = active;
     update();
@@ -397,9 +411,22 @@ export function createMusic({ client, logError }) {
   }
 
   client.on(Events.VoiceStateUpdate, (before, after) => {
-    if (!session || before.channelId !== channel.id || after.channelId === channel.id) return;
-    if (after.id === client.user.id || !channel.members.some((member) => !member.user.bot)) end(session);
+    const voice = session?.voice;
+    if (!voice || before.channelId !== voice.id || after.channelId === voice.id) return;
+    if (after.id === client.user.id || !voice.members.some((member) => !member.user.bot)) end(session);
   });
+
+  function listenerVoice(interaction) {
+    const voice = interaction.member.voice.channel;
+    if (voice?.type !== ChannelType.GuildVoice || isStatsChannel(getState(), voice.id)) {
+      throw new SetupError('Najpierw dołącz do kanału głosowego do rozmów.');
+    }
+    if (session && session.voice.id !== voice.id) throw new SetupError('Muzyka gra już na innym kanale głosowym.');
+    if (!voice.permissionsFor(interaction.guild.members.me)?.has(['ViewChannel', 'Connect', 'Speak'])) {
+      throw new SetupError('Bot potrzebuje dostępu do dołączania i mówienia na tym kanale głosowym.');
+    }
+    return voice;
+  }
 
   async function handle(interaction) {
     if (!(interaction.isButton() || interaction.isModalSubmit()) || !interaction.customId.startsWith(prefix)) return false;
@@ -410,12 +437,13 @@ export function createMusic({ client, logError }) {
       if (!channel || !panel || interaction.channelId !== channel.id ||
         (interaction.isButton() && interaction.message.id !== panel.id)) throw new SetupError('Otwórz aktualny panel muzyczny.');
       const action = interaction.customId.slice(prefix.length);
-      if (interaction.member.voice.channelId !== channel.id) throw new SetupError('Najpierw dołącz do kanału głosowego muzyki.');
       if (interaction.isButton() && action === 'add') {
+        listenerVoice(interaction);
         await interaction.showModal(new ModalBuilder().setCustomId(prefix + 'submit').setTitle('Dodaj utwór do kolejki')
           .addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId(inputLink)
             .setLabel('Tytuł lub link').setStyle(TextInputStyle.Short).setMaxLength(400).setRequired(true))));
       } else if (interaction.isModalSubmit() && action === 'submit') {
+        const voice = listenerVoice(interaction);
         const id = interaction.user.id;
         const now = Date.now();
         if (pending.has(id) || now - (lastRequest.get(id) ?? 0) < 5000 || pending.size >= 5) {
@@ -428,8 +456,8 @@ export function createMusic({ client, logError }) {
           const capacity = queueLimit - (session?.queue.length ?? 0);
           if (!capacity) throw new SetupError('Kolejka jest pełna.');
           const { tracks, skipped } = await findMusic(interaction.fields.getTextInputValue(inputLink), capacity);
-          if (interaction.member.voice.channelId !== channel.id) throw new SetupError('Wróć na kanał głosowy przed dodaniem utworu.');
-          const added = await enqueue(tracks);
+          if (listenerVoice(interaction).id !== voice.id) throw new SetupError('Kanał głosowy się zmienił. Dodaj utwór ponownie.');
+          const added = await enqueue(tracks, voice);
           const omitted = skipped + tracks.length - added;
           const summary = added === 1 ? listing(tracks[0]) : `**${added}** utworów do kolejki`;
           await reply(`🎵 Dodano ${summary}.${omitted ? ` Pominięto: ${omitted} (brak nagrania lub limit importu).` : ''}`);
@@ -443,6 +471,7 @@ export function createMusic({ client, logError }) {
         await reply(lines.join('\n').slice(0, 1950) || 'Kolejka jest pusta.');
       } else if (interaction.isButton() && ['pause', 'skip', 'stop'].includes(action)) {
         if (!session) throw new SetupError('Nic teraz nie gra.');
+        listenerVoice(interaction);
         if (action === 'stop') {
           end(session);
           await reply('Zatrzymano odtwarzanie i wyczyszczono kolejkę.');

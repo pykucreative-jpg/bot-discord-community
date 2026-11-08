@@ -3,7 +3,7 @@ import {
   AuditLogEvent, ChannelType, EmbedBuilder, Events, GuildAuditLogsEntry, MessageType, PermissionFlagsBits,
   SlashCommandBuilder, SystemChannelFlagsBitField, escapeMarkdown,
 } from 'discord.js';
-import { channelLabel, musicChannelKey } from './plan.mjs';
+import { channelLabel, musicChannelKey, musicPanelKey } from './plan.mjs';
 import { confirmMessageClear, reviewButtons } from './panels.mjs';
 import { lockTicketChannel } from './tickets.mjs';
 import {
@@ -199,6 +199,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
     const { channels } = getState();
     const ids = channelEntries.map(({ channel }) => channels[channel.name]).filter(Boolean);
     if (channels[musicChannelKey]) ids.push(channels[musicChannelKey]);
+    if (channels[musicPanelKey]) ids.push(channels[musicPanelKey]);
     return ids.includes(channel?.id) || (channel?.isThread?.() && ids.includes(channel.parentId));
   }
 

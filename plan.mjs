@@ -44,6 +44,7 @@ export const roleMenus = [
 ];
 
 export const musicChannelKey = 'music-voice';
+export const musicPanelKey = 'music-panel';
 
 export const categories = [
   {

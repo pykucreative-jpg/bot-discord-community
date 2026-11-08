@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { AttachmentBuilder, ChannelType, GuildFeature, SlashCommandBuilder } from 'discord.js';
-import { categories, musicChannelKey } from './plan.mjs';
+import { categories, musicChannelKey, musicPanelKey } from './plan.mjs';
 import { confirmCleanup } from './panels.mjs';
 import { channelEntries, inspect, SetupError } from './setup.mjs';
 import { boostSystemSettings } from './security.mjs';
@@ -28,6 +28,7 @@ export function createCleanup() {
       ...categories.map(({ key }) => state.categories[key]),
       ...channelEntries.map(({ channel }) => state.channels[channel.name]),
       state.channels[musicChannelKey],
+      state.channels[musicPanelKey],
     ]);
     const channels = await guild.channels.fetch();
     const obsolete = order([...channels.values()].filter((channel) => !kept.has(channel.id) && !ticketDetails(channel, state)));

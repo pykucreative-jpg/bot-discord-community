@@ -104,7 +104,7 @@ Przy aktualizacji wcześniejszej paczki zachowaj folder data. Bot przeniesie kan
 
 ## Muzyka
 
-Ustaw `DISCORD_MUSIC=true`, żeby bot dodał 🎵│muzyka w kategorii głosowej. Panel pojawi się w czacie tego kanału. Dołącz do głosowego, wybierz **Dodaj utwór** i wpisz tytuł albo wklej adres z YouTube, Spotify lub Audius. Przy linkach Spotify bot dopasowuje nagranie według tytułu, wykonawcy i czasu trwania. Publiczne albumy i playlisty Spotify są importowane po maksymalnie 20 utworów. Kolejka mieści 50 oczekujących pozycji. Bot pokazuje źródło dźwięku i rozłącza się po opróżnieniu kolejki lub kanału.
+Ustaw `DISCORD_MUSIC=true`, żeby bot utworzył osobny kanał tekstowy 🎵│panel-muzyki. Dołącz do kanału głosowego do rozmów, wybierz **Dodaj utwór** w panelu i wpisz tytuł albo wklej adres z YouTube, Spotify lub Audius. Bot dołącza do kanału osoby, która dodała utwór, o ile nie gra już na innym kanale. Przy linkach Spotify bot dopasowuje nagranie według tytułu, wykonawcy i czasu trwania. Publiczne albumy i playlisty Spotify są importowane po maksymalnie 20 utworów. Kolejka mieści 50 oczekujących pozycji. Bot pokazuje źródło dźwięku i rozłącza się po opróżnieniu kolejki lub kanału.
 
 Obraz Docker zawiera FFmpeg i yt-dlp. Przy uruchamianiu poza Dockerem potrzebujesz FFmpeg z obsługą libopus oraz yt-dlp z yt-dlp-ejs dostępnych w PATH.
 
