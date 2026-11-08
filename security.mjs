@@ -5,9 +5,10 @@ import {
 } from 'discord.js';
 import { channelLabel, musicChannelKey, musicPanelKey, verificationSeparators } from './plan.mjs';
 import { confirmMessageClear, reviewButtons } from './panels.mjs';
-import { lockTicketChannel } from './tickets.mjs';
+import { isApplicationChannel, lockTicketChannel } from './tickets.mjs';
 import {
-  channelEntries, isStatsChannel, lockReadOnlyChannel, lockStatsChannel, privateModerationChannel, SetupError,
+  channelEntries, isStatsChannel, lockReadOnlyChannel, lockStatsChannel, privateModerationChannel,
+  restrictChannelMentions, restrictRoleMentions, SetupError,
 } from './setup.mjs';
 
 const DAY = 86_400_000;
@@ -207,6 +208,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
   }
 
   function tracked(channel) {
+    if (isApplicationChannel(channel, getState())) return false;
     const { channels } = getState();
     const ids = channelEntries.map(({ channel }) => channels[channel.name]).filter(Boolean);
     if (channels[musicChannelKey]) ids.push(channels[musicChannelKey]);
@@ -915,9 +917,19 @@ export function createSecurity({ client, guildId, getState, logError }) {
     }
     await lockReadOnlyChannel(channel, getState());
     await lockTicketChannel(channel, getState());
+    await restrictChannelMentions(channel, getState());
     if (channel.id !== getState().channels.nsfw || channel.type !== ChannelType.GuildText || channel.nsfw) return;
     await channel.edit({ nsfw: true, reason: 'Przywrócenie ograniczenia wiekowego w strefie 18+' });
     await log(channel.guild, 'log-ochrona', '🔞 Przywrócono ograniczenie wiekowe', `Kanał: <#${channel.id}>`, 0xE85D75);
+  });
+  on(Events.ChannelCreate, async (channel) => {
+    if (active(channel.guild)) await restrictChannelMentions(channel, getState());
+  });
+  on(Events.GuildRoleUpdate, async (_before, role) => {
+    if (active(role.guild)) await restrictRoleMentions(role, getState());
+  });
+  on(Events.GuildRoleCreate, async (role) => {
+    if (active(role.guild)) await restrictRoleMentions(role, getState());
   });
 
   on(Events.MessageCreate, async (message) => {
@@ -961,6 +973,9 @@ export function createSecurity({ client, guildId, getState, logError }) {
   on(Events.GuildAuditLogEntryCreate, async (entry, guild) => {
     const action = auditActions.get(entry.action);
     if (!active(guild) || !action) return;
+    const targetChannel = guild.channels.cache?.get(entry.targetId) ?? entry.target;
+    if (isApplicationChannel(targetChannel, getState()) || isApplicationChannel(entry.extra?.channel, getState()) ||
+        entry.executorId === guild.client.user.id && /^(Rekrutacja:|Punkty administracji:)/.test(entry.reason ?? '')) return;
     if (entry.action === AuditLogEvent.MemberKick && getState().channels['log-wyrzucenia']) {
       await deliverKickLog(guild, entry);
       return;

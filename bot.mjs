@@ -15,6 +15,7 @@ import { createWebAdmin, webLoginCommand } from './web-admin.mjs';
 import { giveStaffPoint, setupStaffPoints, staffPointCommands } from './staff-points.mjs';
 import {
   applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
+  restrictChannelMentions, restrictRoleMentions,
   SetupError, styleManagedRoles, withSetupLock,
 } from './setup.mjs';
 
@@ -368,7 +369,7 @@ function validateControl(interaction, action) {
   const state = journal.state;
   if (action === 'ticket-close' && state.securityReady && interaction.message?.author?.id === interaction.client.user.id) return;
   const queueReview = ['approve-queue', 'hold-queue'].includes(action);
-  const publicPanel = ['report', 'send-report'].includes(action);
+  const publicPanel = ['report', 'send-report', 'apply-staff'].includes(action);
   const queueKey = ['mod-log', 'logi-bota', 'log-moderacja'].find((name) => state.channels[name] === interaction.channelId);
   const key = publicPanel ? 'start-tutaj' : queueReview ? queueKey : 'panel-moderacji';
   const mainPanel = publicPanel || ['status', 'announce', 'publish', 'moderate',
@@ -391,6 +392,10 @@ async function useControl(interaction, action, key, id) {
   }
   if (action === 'send-report' && interaction.isModalSubmit()) {
     return submitReport(interaction, interaction.fields.getTextInputValue('opis'));
+  }
+  if (action === 'apply-staff' && interaction.isButton()) {
+    if (!security.isVerified(member)) throw new SetupError('Najpierw zaakceptuj regulamin i uzyskaj rolę Zweryfikowany.');
+    return tickets.openApplication(interaction);
   }
   if (action === 'ticket-close' && interaction.isButton()) return tickets.close(interaction, member);
   if (action === 'status') return startupSummary + '\n\n' + security.statisticsReply(interaction.guild);
@@ -553,6 +558,14 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error(startupSummary);
   }
   await security.prepareMemberNotices(guild).catch(logError);
+  await withConfiguration(async () => {
+    const [mentionRoles, mentionChannels] = await Promise.all([guild.roles.fetch(), guild.channels.fetch()]);
+    let blockedMentionUpdates = 0;
+    const mentionError = (error) => { blockedMentionUpdates++; logError(error); };
+    for (const role of mentionRoles.values()) await restrictRoleMentions(role, journal.state).catch(mentionError);
+    for (const channel of mentionChannels.values()) await restrictChannelMentions(channel, journal.state).catch(mentionError);
+    console.log(`Oznaczenia @everyone i @here: moderacja i administratorzy. Błędy zmian: ${blockedMentionUpdates}.`);
+  }).catch(logError);
   await withConfiguration(() => setupStaffPoints(guild, journal)).then(() => {
     console.log('Punkty administracji: przygotowano 5 rang plusów i 3 rangi minusów.');
   }).catch(logError);

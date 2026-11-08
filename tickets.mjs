@@ -1,5 +1,6 @@
 import { ChannelType, EmbedBuilder, MessageFlags, OverwriteType, PermissionFlagsBits } from 'discord.js';
 import { ticketCloseButton } from './panels.mjs';
+import { panelRoleId } from './plan.mjs';
 import { privateModerationChannel, SetupError } from './setup.mjs';
 
 const prefix = 'community-ticket';
@@ -8,20 +9,57 @@ const write = ['SendMessages', 'EmbedLinks'];
 const noMentions = { parse: [] };
 const archiveKey = 'log-archiwum-ticketow';
 const categoryKey = 'ticket-active';
+const applicationCategory = 'staff-applications';
+const applicationArchive = 'staff-applications-archive';
+const applicationPrefix = 'community-application';
+const applicationTemplate = `# 📋 PODANIE DO ADMINISTRACJI
+
+**PO GODZINACH** ━━━━━━━━━━━━━━━━━━━━
+
+1. **Nick na Discordzie:**
+2. **Wiek:**
+3. **Na jakie stanowisko aplikujesz?** Administrator / Moderator / Pomocnik
+4. **Ile czasu dziennie możesz poświęcić na serwer?**
+5. **Czy posiadasz doświadczenie w administracji?**
+6. **Czy byłeś już członkiem administracji na innym serwerze?**
+7. **Dlaczego chcesz dołączyć do naszej ekipy?**
+8. **Co wniesiesz do serwera Po Godzinach?**
+9. **Jak poradzisz sobie z konfliktem między użytkownikami?**
+10. **Co zrobisz, jeśli Twój znajomy złamie regulamin?**
+11. **Jak zachowasz się wobec osoby, która prowokuje Cię na czacie?**
+12. **Czy potrafisz pracować w zespole?**
+13. **Jakie są Twoje mocne strony?**
+14. **Dlaczego powinniśmy wybrać właśnie Ciebie?**
+15. **Czy jesteś osobą aktywną i odpowiedzialną?**
+
+━━━━━━━━━━━━━━━━━━━━
+### 📌 INFORMACJE
+- Odpowiadaj szczerze i samodzielnie.
+- Nie przyjmujemy osób, które nadużywają uprawnień.
+- Wymagana jest kultura osobista i odpowiedzialność.
+- Każde podanie zostanie dokładnie rozpatrzone.
+
+🌙 **PO GODZINACH – RAZEM TWORZYMY COMMUNITY!**`;
 const archiveReason = 'Prywatna strefa pomocy i archiwum zgłoszeń';
 
 export function ticketDetails(channel, state) {
-  if (channel?.type !== ChannelType.GuildText || !channel.parentId ||
-      ![state.categories.moderation, state.categories[categoryKey]].includes(channel.parentId)) return null;
-  const match = new RegExp(`^${prefix}:(open|closed|closing|archived):(\\d{17,20})(?::(\\d{17,20}))?$`).exec(channel.topic ?? '');
+  if (channel?.type !== ChannelType.GuildText || !channel.parentId) return null;
+  const application = channel.parentId === state.categories[applicationCategory];
+  if (!application && ![state.categories.moderation, state.categories[categoryKey]].includes(channel.parentId)) return null;
+  const match = new RegExp(`^${application ? applicationPrefix : prefix}:(open|closed|closing|archived):(\\d{17,20})(?::(\\d{17,20}))?$`).exec(channel.topic ?? '');
   return match && (match[1] === 'archived') === Boolean(match[3])
-    ? { open: match[1] === 'open', status: match[1], userId: match[2], archiveId: match[3] } : null;
+    ? { open: match[1] === 'open', status: match[1], userId: match[2], archiveId: match[3], application } : null;
 }
 
-function ticketPermissions(guild, state, userId, open) {
+export function isApplicationChannel(channel, state) {
+  return Boolean(channel && (channel.id === state.channels[applicationArchive] || channel.id === state.categories[applicationCategory] ||
+    channel.parentId === state.categories[applicationCategory] && channel.parentId || channel.topic?.startsWith(applicationPrefix + ':')));
+}
+
+function ticketPermissions(guild, state, userId, open, application) {
   const member = OverwriteType.Member;
   const role = OverwriteType.Role;
-  const staff = [...new Set([state.roles.mod, state.roles.admin])];
+  const staff = application ? [panelRoleId] : [...new Set([state.roles.mod, state.roles.admin])];
   return [
     { id: guild.id, type: role, deny: ['ViewChannel', 'SendMessages'] },
     { id: guild.client.user.id, type: member, allow: [...read, ...write] },
@@ -30,8 +68,8 @@ function ticketPermissions(guild, state, userId, open) {
   ];
 }
 
-function ticketIsPrivate(channel, guild, state, userId, open = true) {
-  const expected = ticketPermissions(guild, state, userId, open);
+function ticketIsPrivate(channel, guild, state, userId, open = true, application = false) {
+  const expected = ticketPermissions(guild, state, userId, open, application);
   const actual = channel.permissionOverwrites.cache;
   return actual.size === expected.length && expected.every((entry) => {
     const saved = actual.get(entry.id);
@@ -41,9 +79,9 @@ function ticketIsPrivate(channel, guild, state, userId, open = true) {
 
 export async function lockTicketChannel(channel, state) {
   const ticket = ticketDetails(channel, state);
-  if (!ticket || ticketIsPrivate(channel, channel.guild, state, ticket.userId, ticket.open)) return;
+  if (!ticket || ticketIsPrivate(channel, channel.guild, state, ticket.userId, ticket.open, ticket.application)) return;
   await channel.edit({
-    permissionOverwrites: ticketPermissions(channel.guild, state, ticket.userId, ticket.open),
+    permissionOverwrites: ticketPermissions(channel.guild, state, ticket.userId, ticket.open, ticket.application),
     reason: 'Przywrócenie prywatności zgłoszenia',
   });
 }
@@ -156,12 +194,13 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
       try {
         const state = getState();
         const channel = await guild.channels.fetch(channelId, { force: true });
-        if (ticketDetails(channel, state)?.archiveId !== archiveId) return;
-        const archive = await privateModerationChannel(guild, state, { name: archiveKey });
+        const ticket = ticketDetails(channel, state);
+        if (ticket?.archiveId !== archiveId) return;
+        const archive = await privateModerationChannel(guild, state, { name: ticket.application ? applicationArchive : archiveKey });
         const message = await archive.messages.fetch({ message: archiveId, force: true });
         if (message.author.id === guild.client.user.id && message.attachments.size &&
           message.embeds.some((embed) => embed.footer?.text === archiveMarker(channelId))) {
-          await channel.delete('Zgłoszenie zapisano w prywatnym archiwum');
+          await channel.delete(ticket.application ? 'Rekrutacja: podanie zapisano w archiwum' : 'Zgłoszenie zapisano w prywatnym archiwum');
         }
       } catch (error) {
         if (Number(error.code) !== 10003) logError(error);
@@ -169,58 +208,63 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
     }, 8000).unref();
   }
 
-  async function open(interaction, text) {
+  async function open(interaction, text, application = false) {
     const description = text.trim();
-    if (description.length < 5 || description.length > 1200) throw new SetupError('Opis musi zawierać od 5 do 1200 znaków.');
+    if (!application && (description.length < 5 || description.length > 1200)) throw new SetupError('Opis musi zawierać od 5 do 1200 znaków.');
     const { guild, user } = interaction;
     const state = getState();
     if (!state.securityReady || !state.categories.moderation || !state.roles.mod || !state.roles.admin) {
       throw new SetupError('Zgłoszenia będą dostępne po konfiguracji serwera.');
     }
-    if (opening.has(user.id)) throw new SetupError('Twój kanał zgłoszenia jest właśnie tworzony.');
-    opening.add(user.id);
+    const requestKey = `${application}:${user.id}`;
+    if (opening.has(requestKey)) throw new SetupError('Twój kanał zgłoszenia jest właśnie tworzony.');
+    opening.add(requestKey);
     try {
       const channels = await guild.channels.fetch();
       const existing = channels.find((channel) => {
         const ticket = ticketDetails(channel, state);
-        return ticket?.open && ticket.userId === user.id;
+        return ticket?.open && ticket.userId === user.id && ticket.application === application;
       });
       if (existing) {
-        if (!ticketIsPrivate(existing, guild, state, user.id)) {
+        if (!ticketIsPrivate(existing, guild, state, user.id, true, application)) {
           throw new SetupError('Moderacja musi sprawdzić dostęp do Twojego kanału zgłoszenia.');
         }
         const recent = await existing.messages.fetch({ limit: 1 });
-        if (!recent.size) await postOpening(existing, interaction, description);
+        if (!recent.size) await postOpening(existing, interaction, description, application);
         return `Masz już otwarte zgłoszenie: <#${existing.id}>. Dopisz szczegóły na tym kanale.`;
       }
-      if (recentlyOpened.has(user.id)) throw new SetupError('Odczekaj minutę przed otwarciem kolejnego zgłoszenia.');
-      const parent = state.categories[categoryKey] ?? state.categories.moderation;
+      if (recentlyOpened.has(requestKey)) throw new SetupError('Odczekaj minutę przed otwarciem kolejnego zgłoszenia.');
+      const parent = application ? state.categories[applicationCategory] : state.categories[categoryKey] ?? state.categories.moderation;
+      if (!parent || application && !await guild.roles.fetch(panelRoleId, { force: true })) {
+        throw new SetupError('Podania będą dostępne po skonfigurowaniu strefy rekrutacji.');
+      }
       if (channels.filter(({ parentId }) => parentId === parent).size >= 48) {
         throw new SetupError('Brakuje miejsca na nowy kanał zgłoszenia. Poproś moderację o pomoc.');
       }
-      const logsChannel = await privateModerationChannel(guild, state, { name: 'log-tickety' });
+      const logsChannel = await privateModerationChannel(guild, state, { name: application ? applicationArchive : 'log-tickety' });
       const channel = await guild.channels.create({
-        name: 'zgloszenie-' + user.id.slice(-6),
+        name: (application ? 'podanie-' : 'zgloszenie-') + user.id.slice(-6),
         parent,
         type: ChannelType.GuildText,
-        topic: `${prefix}:open:${user.id}`,
-        permissionOverwrites: ticketPermissions(guild, state, user.id, true),
+        topic: `${application ? applicationPrefix : prefix}:open:${user.id}`,
+        permissionOverwrites: ticketPermissions(guild, state, user.id, true, application),
         rateLimitPerUser: 5,
-        reason: `Prywatne zgłoszenie użytkownika ${user.id}`,
+        reason: application ? 'Rekrutacja: otwarcie podania' : `Prywatne zgłoszenie użytkownika ${user.id}`,
       });
-      if (!ticketIsPrivate(channel, guild, state, user.id)) {
+      if (!ticketIsPrivate(channel, guild, state, user.id, true, application)) {
         throw new SetupError('Discord nie zapisał prywatnych uprawnień kanału zgłoszenia.');
       }
-      recentlyOpened.set(user.id, true);
-      setTimeout(() => recentlyOpened.delete(user.id), 60_000).unref();
-      await postOpening(channel, interaction, description).catch(logError);
+      recentlyOpened.set(requestKey, true);
+      setTimeout(() => recentlyOpened.delete(requestKey), 60_000).unref();
+      await postOpening(channel, interaction, description, application).catch(logError);
       await logsChannel.send({
-        content: `📨 **Nowe zgłoszenie** od <@${user.id}> — <#${channel.id}>.`,
+        content: `📨 **${application ? 'Nowe podanie do administracji' : 'Nowe zgłoszenie'}** od <@${user.id}> — <#${channel.id}>.`,
         allowedMentions: noMentions,
       }).catch(logError);
-      return `Otwarto prywatne zgłoszenie: <#${channel.id}>. Możesz tam pisać z moderacją.`;
+      return application ? `Otwarto prywatne podanie: <#${channel.id}>. Odpowiedz tam na pytania.`
+        : `Otwarto prywatne zgłoszenie: <#${channel.id}>. Możesz tam pisać z moderacją.`;
     } finally {
-      opening.delete(user.id);
+      opening.delete(requestKey);
     }
   }
 
@@ -231,7 +275,10 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
     const ticket = ticketDetails(channel, state);
     if (!ticket) throw new SetupError('Otwórz przycisk we właściwym kanale zgłoszenia.');
     const staff = [state.roles.mod, state.roles.admin].some((id) => actor.roles.cache.has(id));
-    if (!fromWebPanel && actor.id !== ticket.userId && actor.id !== guild.ownerId &&
+    if (ticket.application && !actor.roles.cache.has(panelRoleId)) {
+      throw new SetupError('Podanie może zamknąć tylko rola „Właściciel”.');
+    }
+    if (!ticket.application && !fromWebPanel && actor.id !== ticket.userId && actor.id !== guild.ownerId &&
         !actor.permissions.has(PermissionFlagsBits.Administrator) && !staff) {
       throw new SetupError('Zgłoszenie może zamknąć jego autor lub moderacja.');
     }
@@ -243,22 +290,25 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
     if (!ticket.open && ticket.status !== 'closing') return 'Zgłoszenie jest już zamknięte.';
     closing.add(channel.id);
     try {
+      const shouldArchive = archiveEnabled || ticket.application;
+      const ticketPrefix = ticket.application ? applicationPrefix : prefix;
       await channel.edit({
-        topic: `${prefix}:${archiveEnabled ? 'closing' : 'closed'}:${ticket.userId}`,
-        permissionOverwrites: ticketPermissions(guild, state, ticket.userId, false),
-        reason: `Zamknięcie zgłoszenia przez użytkownika ${actor.id}`,
+        topic: `${ticketPrefix}:${shouldArchive ? 'closing' : 'closed'}:${ticket.userId}`,
+        permissionOverwrites: ticketPermissions(guild, state, ticket.userId, false, ticket.application),
+        reason: ticket.application ? 'Rekrutacja: zamknięcie podania' : `Zamknięcie zgłoszenia przez użytkownika ${actor.id}`,
       });
-      if (archiveEnabled) {
+      if (shouldArchive) {
         if (!await canArchive(guild)) {
           return 'Zgłoszenie jest do odczytu. Kanał zostaje do czasu włączenia botowi dostępu do treści wiadomości i ponownego zamknięcia.';
         }
-        const archive = await privateModerationChannel(guild, state, { name: archiveKey });
+        const archive = await privateModerationChannel(guild, state, { name: ticket.application ? applicationArchive : archiveKey });
         const saved = await saveTranscript(channel, archive, ticket, actor);
         if (!saved.attachments.size) throw new SetupError('Zapis rozmowy się nie powiódł. Kanał został zachowany.');
-        await channel.setTopic(`${prefix}:archived:${ticket.userId}:${saved.id}`, 'Zapisano historię zgłoszenia');
-        await log(guild, 'log-tickety', '🔒 Zamknięcie zgłoszenia', `Zamknął: <@${actor.id}>.\n[Zapis rozmowy](${saved.url})`);
+        await channel.setTopic(`${ticketPrefix}:archived:${ticket.userId}:${saved.id}`, ticket.application ? 'Rekrutacja: zapisano podanie' : 'Zapisano historię zgłoszenia');
+        if (!ticket.application) await log(guild, 'log-tickety', '🔒 Zamknięcie zgłoszenia', `Zamknął: <@${actor.id}>.\n[Zapis rozmowy](${saved.url})`);
         scheduleRemoval(guild, channel.id, saved.id);
-        return 'Rozmowa została zapisana dla moderacji. Kanał zgłoszenia zniknie za chwilę.';
+        return ticket.application ? 'Podanie zapisano w archiwum roli „Właściciel”. Kanał zniknie za chwilę.'
+          : 'Rozmowa została zapisana dla moderacji. Kanał zgłoszenia zniknie za chwilę.';
       }
       if (interaction.message) await interaction.message.edit({ components: [] }).catch(logError);
       await channel.send({ content: '🔒 Zgłoszenie zostało zamknięte. Historia jest dostępna do odczytu.',
@@ -270,12 +320,13 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
     }
   }
 
-  return { setup, open, close, isTicket: (channel) => Boolean(ticketDetails(channel, getState())) };
+  return { setup, open, openApplication: (interaction) => open(interaction, '', true), close,
+    isTicket: (channel) => Boolean(ticketDetails(channel, getState())) };
 }
 
-function postOpening(channel, interaction, description) {
+function postOpening(channel, interaction, description, application) {
   return channel.send({
-    content: `📨 **Prywatne zgłoszenie**\nZgłaszający: <@${interaction.user.id}>\n\n>>> ${description}\n\nTu możesz dopisać szczegóły i porozmawiać z moderacją.`,
+    content: application ? applicationTemplate : `📨 **Prywatne zgłoszenie**\nZgłaszający: <@${interaction.user.id}>\n\n>>> ${description}\n\nTu możesz dopisać szczegóły i porozmawiać z moderacją.`,
     components: [ticketCloseButton()],
     allowedMentions: noMentions,
     flags: MessageFlags.SuppressEmbeds,

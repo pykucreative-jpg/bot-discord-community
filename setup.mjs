@@ -21,7 +21,7 @@ const statsMask = new PermissionsBitField(statsBlocked).bitfield;
 const moderators = ['admin', 'mod'];
 const communityStaff = [...moderators, 'helper', 'organizer'];
 const layoutVersion = 3;
-const messageVersion = 6;
+const messageVersion = 7;
 
 export const botPermissions = new PermissionsBitField([
   ...read, ...noWrite, ...voice, 'ViewAuditLog',
@@ -217,7 +217,7 @@ export async function lockReadOnlyChannel(channel, state) {
   const item = channelEntries.find(({ channel: definition }) => state.channels[definition.name] === channel.id);
   const access = item?.channel.access ?? item?.category.access;
   const guild = channel.guild;
-  if (['mods', 'logs', 'staff-records'].includes(access)) {
+  if (['mods', 'logs', 'staff-records', 'owner-records'].includes(access)) {
     const permissionOverwrites = overwrites(guild, state, access);
     if (!matchesOverwrites(channel.permissionOverwrites.cache, permissionOverwrites)) {
       await channel.edit({ permissionOverwrites, reason: 'Prywatny dostęp do kanału tylko dla moderacji' });
@@ -284,6 +284,13 @@ function overwrites(guild, state, access) {
   const bot = guild.client.user.id;
   const hide = { id: everyone, type: OverwriteType.Role, allow: [], deny: ['ViewChannel'] };
   const botAccess = allow(bot, [...read, ...write], OverwriteType.Member);
+  if (access === 'owner-records') {
+    return [
+      { ...hide, deny: [...hide.deny, ...noWrite] },
+      allow(bot, [...read, ...write, 'AttachFiles'], OverwriteType.Member),
+      ...(guild.roles.cache.has(panelRoleId) ? [allow(panelRoleId, read)] : []),
+    ];
+  }
   if (access === 'staff-records') {
     return [
       { ...hide, deny: [...hide.deny, ...noWrite] },
@@ -446,7 +453,7 @@ async function finishSetup(guild, { state, save }) {
   await positionStats(guild, state);
   const currentChannels = await guild.channels.fetch();
   for (const { category, channel } of channelEntries) {
-    if (['lobby', 'read', 'events', 'mods', 'logs', 'staff-records'].includes(channel.access ?? category.access)) {
+    if (['lobby', 'read', 'events', 'mods', 'logs', 'staff-records', 'owner-records'].includes(channel.access ?? category.access)) {
       await lockReadOnlyChannel(currentChannels.get(state.channels[channel.name]), state);
     }
   }
@@ -578,7 +585,7 @@ export async function privateModerationChannel(guild, state, { force = true, nam
   const actual = channel?.permissionOverwrites?.cache;
   const botMentionAccess = name === 'log-bany' && expected.map((entry) => entry.id === guild.client.user.id
     ? { ...entry, allow: [...entry.allow, 'MentionEveryone'] } : entry);
-  if (!['logs', 'mods', 'staff-records'].includes(access) || channel?.type !== ChannelType.GuildText ||
+  if (!['logs', 'mods', 'staff-records', 'owner-records'].includes(access) || channel?.type !== ChannelType.GuildText ||
       channel.parentId !== state.categories[ticketArchive ? 'ticket-help' : extraLog ? 'bot-logs' : item.category.key] ||
       !(matchesOverwrites(actual, expected) || (botMentionAccess && matchesOverwrites(actual, botMentionAccess)))) {
     throw new SetupError('Prywatny kanał modów wymaga sprawdzenia uprawnień przez administrację.');
@@ -639,4 +646,27 @@ export async function installProtection(guild, state) {
     }
   }
   return outcomes.join('\n');
+}
+
+export async function restrictRoleMentions(role, state) {
+  if (role.managed) return;
+  const permitted = moderators.some((key) => role.id === state.roles[key]);
+  const bit = PermissionsBitField.Flags.MentionEveryone;
+  const old = role.permissions.bitfield;
+  const next = permitted ? old | bit : old & ~bit;
+  if (old === next) return;
+  if (!role.editable) throw new SetupError(`Hierarchia blokuje ustawienie oznaczeń roli „${role.name}”.`);
+  await role.setPermissions(next, 'Ograniczenie @everyone i @here do moderatorów i administratorów');
+}
+
+export async function restrictChannelMentions(channel, state) {
+  const entries = channel?.permissionOverwrites?.cache;
+  if (!entries) return;
+  const allowed = new Set([channel.guild.client.user.id, ...moderators.map((key) => state.roles[key])]);
+  for (const overwrite of entries.values()) {
+    if (!allowed.has(overwrite.id) && overwrite.allow.has('MentionEveryone', false)) {
+      await channel.permissionOverwrites.edit(overwrite.id, { MentionEveryone: null },
+        { type: overwrite.type, reason: 'Ograniczenie @everyone i @here do ekipy' });
+    }
+  }
 }

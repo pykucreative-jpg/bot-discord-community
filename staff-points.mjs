@@ -73,7 +73,7 @@ export async function giveStaffPoint(interaction, actor, state, logError) {
     if (degraded) next.delete(degraded.id);
     next.add(marks[number - 1].id);
     const title = `${kindLabel(kind)} ${number}/${limit}`;
-    await target.roles.set([...next], `${title} · wykonawca ${actor.id} · ${note}`);
+    await target.roles.set([...next], `Punkty administracji: ${title} · wykonawca ${actor.id}`);
     const outcome = degraded ? `Degradacja: zdjęto rangę „${degraded.name}”.`
       : kind === 'plus' && number === limit ? 'Osiągnięto maksymalną liczbę plusów.' : '';
     const embed = new EmbedBuilder().setTitle(title).setColor(color(kind)).setTimestamp()

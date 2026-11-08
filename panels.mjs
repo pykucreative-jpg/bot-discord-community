@@ -17,7 +17,7 @@ function row(...components) {
 }
 
 export function communityButtons() {
-  return row(button('report', 'Zgłoś sprawę'));
+  return row(button('report', 'Zgłoś sprawę'), button('apply-staff', 'Złóż podanie do administracji'));
 }
 
 export function staffButtons() {

@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url';
 
-const moderation = ['ManageMessages', 'ManageThreads', 'ModerateMembers', 'KickMembers'];
+const moderation = ['ManageMessages', 'ManageThreads', 'ModerateMembers', 'KickMembers', 'MentionEveryone'];
 export const panelRoleId = '1568431258550272087';
 export const roles = [
   { key: 'blocked', name: 'Weryfikacja wstrzymana' },
@@ -121,6 +121,13 @@ export const categories = [
     ],
   },
   {
+    key: 'staff-applications', name: '📋 PODANIA DO ADMINISTRACJI', access: 'owner-records',
+    channels: [
+      { name: 'staff-applications-archive', label: 'archiwum-podan', emoji: '📁',
+        topic: 'Prywatne zapisy podań do administracji.' },
+    ],
+  },
+  {
     key: 'bot-logs', name: '📋・LOGI BOTA', access: 'logs',
     channels: [
       { name: 'log-wiadomosci', label: 'wiadomosci', emoji: '📝', topic: 'Edycje, usunięcia i czyszczenie wiadomości.' },
@@ -157,7 +164,7 @@ export const starterMessages = {
     '👋 Witaj na serwerze!',
     `1. Przejdź do ${channel('regulamin')}, przeczytaj zasady i kliknij **Akceptuję regulamin**.`,
     `2. Gdy odblokują się kanały, wybierz role w ${channel('wybierz-role')} i przywitaj się na ${channel('ogolny')}.`,
-    `Do wspólnego grania znajdziesz ludzi na ${channel('szukam-ekipy')}. Pod tą kartą możesz prywatnie zgłosić sprawę.`,
+    `Do wspólnego grania znajdziesz ludzi na ${channel('szukam-ekipy')}. Pod tą kartą możesz zgłosić sprawę lub złożyć prywatne podanie do administracji.`,
   ].join('\n'),
   regulamin: () => [
     '📜 Regulamin i weryfikacja',
