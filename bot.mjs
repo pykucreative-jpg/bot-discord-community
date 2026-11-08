@@ -574,10 +574,13 @@ client.once(Events.ClientReady, async (readyClient) => {
   await security.prepareMemberNotices(guild).catch(logError);
   await withConfiguration(async () => {
     const state = journal.state;
-    const plan = await inspect(guild, state, 'community');
+    const plan = await inspect(guild, state, 'community', 'tik-toki');
     await applyChannels(guild, journal, plan);
     console.log(`Kanał Tik Toki gotowy: ${state.channels['tik-toki']}.`);
-  }).catch(logError);
+  }).catch((error) => {
+    if (error instanceof SetupError) console.warn('Kanał Tik Toki:', error.message);
+    else logError(error);
+  });
   await withConfiguration(async () => {
     const state = journal.state;
     for (const scope of ['moderation', 'staff-applications']) {

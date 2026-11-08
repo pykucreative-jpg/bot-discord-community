@@ -105,7 +105,7 @@ function checkResource(id, name, collection, valid, conflicts) {
   return true;
 }
 
-export async function inspect(guild, state, categoryScope) {
+export async function inspect(guild, state, categoryScope, channelScope) {
   const [serverRoles, serverChannels, bot] = await Promise.all([
     guild.roles.fetch(),
     guild.channels.fetch(),
@@ -115,7 +115,9 @@ export async function inspect(guild, state, categoryScope) {
   if (missing.length) throw new SetupError(`Brak uprawnień bota: ${missing.join(', ')}.`);
 
   const scopedCategories = categoryScope ? categories.filter(({ key }) => key === categoryScope) : categories;
-  const scopedChannels = categoryScope ? channelEntries.filter(({ category }) => category.key === categoryScope) : channelEntries;
+  const scopedChannels = categoryScope
+    ? channelEntries.filter(({ category, channel }) => category.key === categoryScope && (!channelScope || channel.name === channelScope))
+    : channelEntries;
   if (categoryScope && moderators.some((key) => !serverRoles.has(state.roles[key]))) {
     throw new SetupError('Do prywatnych logów potrzebne są istniejące role Moderator i Administrator.');
   }
