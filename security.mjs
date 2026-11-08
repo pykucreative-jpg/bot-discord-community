@@ -301,12 +301,18 @@ export function createSecurity({ client, guildId, getState, logError }) {
         entry.targetId && now - entry.createdTimestamp >= 5000 && now - entry.createdTimestamp < kickHistoryWindow);
       let logs = 0;
       let farewells = 0;
+      let existingLogs = 0;
+      let existingFarewells = 0;
+      let bots = 0;
       for (const entry of entries) {
-        if (await deliverKickLog(guild, entry, true).catch(logError)) logs++;
+        const logged = await deliverKickLog(guild, entry, true).catch(logError);
+        if (logged === true) logs++;
+        if (logged === false) existingLogs++;
         if (kicksFarewells.has(entry.id)) continue;
         const departure = recentDepartures.get(entry.targetId);
         if (departure && Math.abs(departure - entry.createdTimestamp) < 30_000) {
           kicksFarewells.set(entry.id, entry.createdTimestamp);
+          existingFarewells++;
           continue;
         }
         try {
@@ -321,13 +327,13 @@ export function createSecurity({ client, guildId, getState, logError }) {
                 Math.abs(message.createdTimestamp - entry.createdTimestamp) < 30_000)))) {
               await channel.send({ embeds: [embed], allowedMentions: NO_MENTIONS, nonce: entry.id, enforceNonce: true });
               farewells++;
-            }
-          }
+            } else existingFarewells++;
+          } else bots++;
           kicksFarewells.set(entry.id, entry.createdTimestamp);
         } catch (error) { logError(error); }
       }
       if (report || logs || farewells) {
-        console.log(`Sprawdzono wyrzucenia z audytu: ${entries.length}. Uzupełniono logi: ${logs}, pożegnania: ${farewells}.`);
+        console.log(`Sprawdzono wyrzucenia z audytu: ${entries.length}. Uzupełniono logi: ${logs}, pożegnania: ${farewells}. Już zapisane: logi ${existingLogs}, pożegnania ${existingFarewells}. Konta botów: ${bots}. Kanał wyrzuceń: ${getState().channels['log-wyrzucenia']}.`);
       }
     } finally {
       checkingKicks = false;
