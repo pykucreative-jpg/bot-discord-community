@@ -1,5 +1,5 @@
 import {
-  Client, EmbedBuilder, Events, GatewayIntentBits, MessageFlags, Partials, PermissionFlagsBits,
+  AutoModerationActionType, Client, EmbedBuilder, Events, GatewayIntentBits, MessageFlags, Partials, PermissionFlagsBits,
   Routes, SlashCommandBuilder,
 } from 'discord.js';
 import { categoryLabel, channelLabel, roleMenus, roles } from './plan.mjs';
@@ -7,14 +7,14 @@ import { clearRole, menuPrefix, refreshRoleMenu } from './role-panel.mjs';
 import { cleanupCommand, createCleanup } from './cleanup.mjs';
 import { communityButtons, controls, manualRoles, moderationButtons, panelModal, verificationButton } from './panels.mjs';
 import { boostSystemSettings, createSecurity, securityCommands } from './security.mjs';
-import { createTickets } from './tickets.mjs';
+import { createTickets, isApplicationChannel } from './tickets.mjs';
 import { createMusic, removeMusicPanel } from './music.mjs';
 import { createJockiePanel } from './jockie-panel.mjs';
 import { createCommunityPlus } from './community-plus.mjs';
 import { createWebAdmin, webLoginCommand } from './web-admin.mjs';
 import { giveStaffPoint, setupStaffPoints, staffPointCommands } from './staff-points.mjs';
 import {
-  applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
+  applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installInviteProtection, installProtection, loadState,
   privateModerationChannel, restrictChannelMentions, restrictRoleMentions,
   SetupError, styleManagedRoles, withSetupLock,
 } from './setup.mjs';
@@ -85,12 +85,21 @@ const commands = [
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildModeration, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates],
+    GatewayIntentBits.GuildModeration, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.AutoModerationExecution],
   partials: [Partials.Message, Partials.GuildMember, Partials.User],
 });
 let journal = await loadState(guildId);
 const cleanup = createCleanup();
 const security = createSecurity({ client, guildId, getState: () => journal.state, logError });
+let inviteProtectionId;
+client.on(Events.AutoModerationActionExecution, (event) => {
+  const { guild, action, channel, userId, ruleId } = event;
+  if (guild.id !== guildId || ruleId !== inviteProtectionId || action.type !== AutoModerationActionType.BlockMessage ||
+      !channel || isApplicationChannel(channel, journal.state) || isApplicationChannel(channel.parent, journal.state)) return;
+  security.log(guild, 'log-ochrona', '🛡️ Zablokowano obce zaproszenie Discord',
+    `Osoba: <@${userId}>\nKanał: <#${channel.id}>\nKara ustawiona w AutoMod: 10 minut wyciszenia.`).catch(logError);
+});
 const webAdmin = createWebAdmin({ client, origin: process.env.DISCORD_WEB_ADMIN_ORIGIN,
   port: Number(process.env.DISCORD_WEB_ADMIN_PORT ?? 8080), log: security.log, logError,
   closeTicket: (interaction, actor) => tickets.close(interaction, actor, { fromWebPanel: true }),
@@ -605,6 +614,10 @@ client.once(Events.ClientReady, async (readyClient) => {
     else logError(error);
   });
   if (communityPlus) await withConfiguration(() => communityPlus.setup(guild, journal)).catch(logError);
+  await withConfiguration(() => installInviteProtection(guild, journal.state)).then((rule) => {
+    inviteProtectionId = rule.id;
+    console.log(`Blokada obcych zaproszeń aktywna: reguła ${rule.id}, wyciszenie 10 minut, alerty w ochronie.`);
+  }).catch(logError);
   if (communityPlus) await withConfiguration(() => tickets.setup(guild, journal)).catch(logError);
 });
 

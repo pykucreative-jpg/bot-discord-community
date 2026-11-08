@@ -659,6 +659,37 @@ export async function restrictRoleMentions(role, state) {
   await role.setPermissions(next, 'Ograniczenie @everyone i @here do moderatorów i administratorów');
 }
 
+export async function installInviteProtection(guild, state) {
+  const name = 'Community • Zaproszenia na inne serwery Discord';
+  const exemptRoles = [state.roles.mod, state.roles.admin].filter(Boolean);
+  if (exemptRoles.length !== 2) throw new SetupError('Brakuje ról Moderator i Administrator.');
+  const hosts = ['discord.gg/', 'discord.com/invite/', 'discordapp.com/invite/'];
+  const codes = [...new Set([state.communityInvite, guild.vanityURLCode])]
+    .filter((code) => /^[a-z0-9_-]{1,25}$/i.test(code ?? ''));
+  const regexPatterns = [String.raw`(?i)(?:^|[^a-z0-9_.@/-])(?:https?://)?(?:www\.)?(?:discord\.gg|discord(?:app)?\.com/invite)/[a-z0-9_-]+`];
+  const allowList = codes.flatMap((code) => hosts.map((host) => host + code));
+  const customMessage = 'Zaproszenia na inne serwery Discord może wysyłać tylko moderacja. Wyciszenie trwa 10 minut.';
+  const actions = [
+    { type: AutoModerationActionType.BlockMessage, metadata: { customMessage } },
+    { type: AutoModerationActionType.Timeout, metadata: { durationSeconds: 600 } },
+  ];
+  const rules = await guild.autoModerationRules.fetch();
+  const existing = rules.find((rule) => rule.name === name && rule.creatorId === guild.client.user.id);
+  const sameItems = (left, right) => [...left].sort().join('\n') === [...right].sort().join('\n');
+  const options = { name, enabled: true, triggerMetadata: { regexPatterns, allowList }, actions,
+    exemptRoles, exemptChannels: [], reason: 'Blokada obcych zaproszeń z wyciszeniem na 10 minut' };
+  if (!existing) {
+    return guild.autoModerationRules.create({ ...options, triggerType: AutoModerationRuleTriggerType.Keyword,
+      eventType: AutoModerationRuleEventType.MessageSend });
+  }
+  if (existing.enabled && sameItems(existing.exemptRoles.keys(), exemptRoles) && !existing.exemptChannels.size &&
+      sameItems(existing.triggerMetadata.regexPatterns, regexPatterns) && sameItems(existing.triggerMetadata.allowList, allowList) &&
+      !existing.triggerMetadata.keywordFilter.length && existing.actions.length === actions.length &&
+      existing.actions.some(({ type, metadata }) => type === AutoModerationActionType.BlockMessage && metadata.customMessage === customMessage) &&
+      existing.actions.some(({ type, metadata }) => type === AutoModerationActionType.Timeout && metadata.durationSeconds === 600)) return existing;
+  return existing.edit({ ...options, triggerMetadata: { ...options.triggerMetadata, keywordFilter: [] } });
+}
+
 export async function restrictChannelMentions(channel, state) {
   const entries = channel?.permissionOverwrites?.cache;
   if (!entries) return;
