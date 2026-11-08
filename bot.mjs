@@ -574,11 +574,19 @@ client.once(Events.ClientReady, async (readyClient) => {
   await security.prepareMemberNotices(guild).catch(logError);
   await withConfiguration(async () => {
     const state = journal.state;
+    const plan = await inspect(guild, state, 'community');
+    await applyChannels(guild, journal, plan);
+    console.log(`Kanał Tik Toki gotowy: ${state.channels['tik-toki']}.`);
+  }).catch(logError);
+  await withConfiguration(async () => {
+    const state = journal.state;
     for (const scope of ['moderation', 'staff-applications']) {
       const plan = await inspect(guild, state, scope);
       await applyChannels(guild, journal, plan);
     }
     await privateModerationChannel(guild, state, { name: 'staff-records' });
+    const government = await privateModerationChannel(guild, state, { name: 'rzadowy' });
+    console.log(`Prywatny kanał Rządowy gotowy: ${government.id}.`);
     await privateModerationChannel(guild, state, { name: 'staff-applications-archive' });
     const start = await guild.channels.fetch(state.channels['start-tutaj'], { force: true });
     const message = await start.messages.fetch({ message: state.messages['start-tutaj'], force: true });

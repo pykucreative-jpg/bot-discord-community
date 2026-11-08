@@ -87,6 +87,7 @@ export const categories = [
     channels: [
       { name: 'ogolny', emoji: '💬', topic: 'Rozmowy, przedstawianie się i pytania o serwer. Prywatne zgłoszenia znajdziesz w kanale startowym.' },
       { name: 'media-i-memy', emoji: '📸', topic: 'Zdjęcia, klipy z gier i memy.' },
+      { name: 'tik-toki', emoji: '🎬', topic: 'Krótkie filmy i linki z TikToka.' },
       { name: 'witamy', emoji: '👋', topic: 'Powitania nowych członków i podziękowania za boosty.', access: 'read' },
       { name: 'pozegnania', emoji: '🌙', topic: 'Pożegnania osób, które opuściły serwer.', access: 'read' },
     ],
@@ -115,6 +116,7 @@ export const categories = [
     channels: [
       { name: 'mod-log', label: 'modzi', emoji: '🛡️', legacyEmoji: '📋', layout: 5,
         topic: 'Prywatny czat moderatorów.' },
+      { name: 'rzadowy', label: 'rządowy', emoji: '🏛️', topic: 'Prywatne rozmowy moderacji i administracji.' },
       { name: 'panel-moderacji', emoji: '🛠️', topic: 'Panel i narzędzia moderacji.', access: 'logs' },
       { name: 'staff-records', label: 'ostrzezenia-administracji', emoji: '⚖️',
         topic: 'Prywatne plusy, minusy i degradacje ekipy.', access: 'staff-records' },

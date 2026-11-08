@@ -111,6 +111,14 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
         allow(id, id === state.roles.verified ? user : [...new Set([...user, 'SendMessages'])])),
     ];
   };
+  const roomAccess = (state, guild) => access(state, guild, 'voice').map((entry) =>
+    entry.type === OverwriteType.Member ? { ...entry, allow: [...entry.allow, 'MoveMembers'] } : entry);
+  const roomPermissions = ['ViewChannel', 'Connect', 'MoveMembers'];
+  async function ensureRoomMove(channel, bot) {
+    if (channel.permissionsFor(bot)?.has(roomPermissions)) return;
+    await channel.permissionOverwrites.edit(bot, { ViewChannel: true, Connect: true, MoveMembers: true }, { reason: why });
+    if (!channel.permissionsFor(bot)?.has(roomPermissions)) throw new SetupError('Bot nie może przenosić osób w pokoju głosowym.');
+  }
 
   async function ensureChannel(guild, journal, all, key, options) {
     const { state, save } = journal;
@@ -218,12 +226,16 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
         if (guild.afkChannelId !== afk.id || guild.afkTimeout !== 300) {
           await guild.edit({ afkChannel: afk.id, afkTimeout: 300, reason: why });
         }
-        const entry = await voice('plus-create', '➕│Utwórz pokój');
+        const entry = await make('plus-create', '➕│Utwórz pokój', ChannelType.GuildVoice, 'voice', rooms.id,
+          { permissionOverwrites: roomAccess(state, guild) });
         const bot = await guild.members.fetchMe();
-        if (!entry.permissionsFor(bot)?.has('MoveMembers')) {
-          await entry.permissionOverwrites.edit(bot, { MoveMembers: true }, { reason: why }).catch(logError);
-        }
-        console.log(`AFK gotowe: ${afk.id}. Wejście do pokoi: ${entry.id}, przenoszenie: ${entry.permissionsFor(bot)?.has('MoveMembers') ? 'gotowe' : 'brak uprawnienia'}.`);
+        await ensureRoomMove(entry, bot);
+        console.log(`AFK gotowe: ${afk.id}. Wejście do pokoi: ${entry.id}, przenoszenie: gotowe.`);
+      },
+      async () => {
+        await guild.roles.fetch();
+        const streamer = await ensureRole(guild, journal, 'plus-streamer', '🎥│Streamer');
+        console.log(`Rola Streamer gotowa: ${streamer.id}.`);
       },
       async () => {
         await guild.roles.fetch();
@@ -283,13 +295,21 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
     if (!progress.read().rooms[id] || removing.has(id)) return;
     removing.add(id);
     setTimeout(async () => {
+      let defer = false;
       try {
         const channel = guild.channels.cache.get(id);
         if (channel && (channel.parentId !== getState().categories['plus-rooms'] || channel.members.size)) return;
-        if (channel) await channel.delete('Tymczasowy pokój jest pusty');
+        defer = creating.has(progress.read().rooms[id]);
+        if (defer) return;
+        if (channel) await channel.delete('Tymczasowy pokój jest pusty').catch((error) => {
+          if (Number(error.code) !== 10003) throw error;
+        });
         await progress.update((data) => { delete data.rooms[id]; });
       } catch (error) { if (Number(error.code) !== 10003) logError(error); }
-      finally { removing.delete(id); }
+      finally {
+        removing.delete(id);
+        if (defer) scheduleRoomRemoval(guild, id);
+      }
     }, 4000).unref();
   }
 
@@ -300,19 +320,28 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
     const state = getState();
     if (!human(member) || !security.isVerified(member) || !channelId ||
         channelId !== state.channels['plus-create'] || creating.has(member.id)) return;
-    if (!after.channel.permissionsFor(guild.members.me)?.has('MoveMembers')) return;
+    if (!after.channel?.permissionsFor(guild.members.me)?.has(roomPermissions)) return;
     creating.add(member.id);
     try {
       const found = Object.entries(progress.read().rooms).find(([, owner]) => owner === member.id);
       let room = found && guild.channels.cache.get(found[0]);
-      if (!room) {
+      if (!isVoice(room) || room.parentId !== state.categories['plus-rooms']) {
         room = await guild.channels.create({ name: `🎧│Pokój ${member.displayName.slice(0, 60)}`, type: ChannelType.GuildVoice,
-          parent: state.categories['plus-rooms'], permissionOverwrites: access(state, guild, 'voice'), reason: why });
-        try { await progress.update((data) => { data.rooms[room.id] = member.id; }); }
+          parent: state.categories['plus-rooms'], permissionOverwrites: roomAccess(state, guild), reason: why });
+        try {
+          await progress.update((data) => {
+            if (found) delete data.rooms[found[0]];
+            data.rooms[room.id] = member.id;
+          });
+        }
         catch (error) { await room.delete('Nie udało się zapisać pokoju').catch(logError); throw error; }
       }
       if (member.voice.channelId === channelId) {
-        try { await member.voice.setChannel(room, 'Własny pokój głosowy'); }
+        try {
+          await ensureRoomMove(room, guild.members.me);
+          if (member.voice.channelId === channelId) await member.voice.setChannel(room, 'Własny pokój głosowy');
+          else scheduleRoomRemoval(guild, room.id);
+        }
         catch (error) { scheduleRoomRemoval(guild, room.id); throw error; }
       } else scheduleRoomRemoval(guild, room.id);
     } finally { creating.delete(member.id); }
