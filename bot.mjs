@@ -8,7 +8,7 @@ import { cleanupCommand, createCleanup } from './cleanup.mjs';
 import { controls, manualRoles, moderationButtons, panelModal, verificationButton } from './panels.mjs';
 import { boostSystemSettings, createSecurity, securityCommands } from './security.mjs';
 import { createTickets } from './tickets.mjs';
-import { createMusic } from './music.mjs';
+import { createMusic, removeMusicPanel } from './music.mjs';
 import {
   applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
   SetupError, styleManagedRoles, withSetupLock,
@@ -536,6 +536,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     if (error instanceof SetupError) console.warn(error.message);
     else logError(error);
   });
+  else await withConfiguration(() => removeMusicPanel(guild, journal)).catch(logError);
 });
 
 try {

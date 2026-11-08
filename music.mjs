@@ -207,6 +207,26 @@ export async function openMusicStream(id, signal) {
 
 const button = (action, label, style) => new ButtonBuilder().setCustomId(prefix + action).setLabel(label).setStyle(style);
 const listing = (track) => `**${safe(track.artist)} – ${safe(track.title)}** · [${track.source}](<${track.url}>)`;
+const isMusicPanel = (message, botId) => message?.author.id === botId &&
+  message.components.some((row) => row.components.some((item) => item.customId === prefix + 'add'));
+
+export async function removeMusicPanel(guild, { state, save }) {
+  if (!state.channels[key] || !state.messages[key]) return;
+  try {
+    const channel = await guild.channels.fetch(state.channels[key]);
+    if (channel?.type === ChannelType.GuildText) {
+      const message = await channel.messages.fetch(state.messages[key]);
+      if (isMusicPanel(message, guild.client.user.id)) {
+        await message.delete();
+        console.log(`Usunięto panel muzyczny z kanału ${channel.id}.`);
+      }
+    }
+  } catch (error) {
+    if (![10003, 10008].includes(Number(error.code))) throw error;
+  }
+  delete state.messages[key];
+  await save();
+}
 
 function youtubeStream(track, signal, diagnostics = false) {
   return spawn(ytDlp, [...ytOptions, ...ytFormat, '--quiet', '-o', '-', '--', youtubeUrl(track.id)],
@@ -246,8 +266,7 @@ export function createMusic({ client, getState, logError }) {
     updates = updates.then(() => panel?.edit(payload())).catch(logError);
   }
 
-  const isPanel = (message) => message?.author.id === client.user.id &&
-    message.components.some((row) => row.components.some((item) => item.customId === prefix + 'add'));
+  const isPanel = (message) => isMusicPanel(message, client.user.id);
 
   async function setup(guild, { state, save }) {
     const parent = state.categories.voice;
