@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   AuditLogEvent, ChannelType, EmbedBuilder, Events, GuildAuditLogsEntry, MessageType, PermissionFlagsBits,
   SlashCommandBuilder, SystemChannelFlagsBitField, escapeMarkdown,
@@ -18,6 +18,7 @@ const NO_MENTIONS = { parse: [] };
 const memberNoticeChannels = ['witamy', 'pozegnania'];
 const noticePermissions = ['ViewChannel', 'ReadMessageHistory', 'SendMessages', 'EmbedLinks'];
 const departureTitle = '📤 Opuszczenie serwera';
+const joinTitle = '📥 Wejście na serwer';
 const kickTitle = '🧾 Wyrzucono członka';
 const kickHistoryWindow = 30 * 60_000;
 const auditActions = new Map(Object.entries({
@@ -186,7 +187,10 @@ export function createSecurity({ client, guildId, getState, logError }) {
   const kicksLogged = new Map();
   const kicksFarewells = new Map();
   const recentDepartures = new Map();
+  const welcomeDeliveries = new Map();
+  const joinLogDeliveries = new Map();
   let checkingKicks = false;
+  let checkingJoins = false;
   let raidUntil = 0;
 
   function on(event, handler) {
@@ -242,10 +246,104 @@ export function createSecurity({ client, guildId, getState, logError }) {
     return channel;
   }
 
-  function welcomeCard(userId) {
+  function welcomeCard(guild, userId) {
     const rules = getState().channels.regulamin;
-    return card('👋 Witaj w Centrum Graczy!',
+    return card(`👋 Witaj na ${guild.name.slice(0, 100)}!`,
       `Hej <@${userId}>! Fajnie, że do nas dołączasz. Przeczytaj i zaakceptuj zasady w <#${rules}>, żeby odblokować serwer. Do zobaczenia w grze! 🎮`, 0x2CA58D);
+  }
+
+  function joinDescription(member, when) {
+    const { guild, user } = member;
+    const created = Math.floor(user.createdTimestamp / 1000);
+    const fresh = when - user.createdTimestamp < newAccountAge;
+    return `${label(user)}\nWiek konta: **${accountAge(user, when)}**\nUtworzone: <t:${created}:F> (<t:${created}:R>).\nLiczba kont na serwerze: **${guild.memberCount}**.${!user.bot && fresh ? '\n⚠️ Nowe konto. Weryfikacja wymaga decyzji moderatora.' : ''}`;
+  }
+
+  function joinDeliveryKey(member) {
+    return `${member.id ?? member.user.id}:${member.joinedTimestamp ?? 0}`;
+  }
+
+  function joinDeliveryOptions(member) {
+    if (!member.joinedTimestamp) return {};
+    return { nonce: createHash('sha256').update(joinDeliveryKey(member)).digest('hex').slice(0, 24), enforceNonce: true };
+  }
+
+  async function checkRecentJoins(guild, report = false) {
+    if (!active(guild) || !getState().channels['log-wejscia'] || checkingJoins) return;
+    checkingJoins = true;
+    try {
+      const now = Date.now();
+      for (const recent of [welcomeDeliveries, joinLogDeliveries]) {
+        for (const [key, time] of recent) if (now - time >= kickHistoryWindow) recent.delete(key);
+      }
+      const candidates = [];
+      let after;
+      for (;;) {
+        const page = await guild.members.list({ limit: 1000, cache: false, ...(after ? { after } : {}) });
+        candidates.push(...page.filter(({ joinedTimestamp }) =>
+          now - joinedTimestamp >= 5000 && now - joinedTimestamp < kickHistoryWindow).values());
+        if (page.size < 1000 || page.lastKey() === after) break;
+        after = page.lastKey();
+      }
+      let welcomes = 0;
+      let logs = 0;
+      const missingWelcomes = candidates.filter((member) => !member.user.bot && !welcomeDeliveries.has(joinDeliveryKey(member)));
+      const missingLogs = candidates.filter((member) => !joinLogDeliveries.has(joinDeliveryKey(member)));
+      if (missingWelcomes.length) {
+        await (async () => {
+          const channel = await noticeChannel(guild, 'witamy');
+          const history = await channel.messages.fetch({ limit: 100 });
+          for (const member of missingWelcomes) {
+            const key = joinDeliveryKey(member);
+            if (welcomeDeliveries.has(key)) continue;
+            const id = member.user.id;
+            const known = history.some((message) => (message.type === MessageType.UserJoin && message.author.id === id &&
+              Math.abs(message.createdTimestamp - member.joinedTimestamp) < 30_000) ||
+              (message.author.id === client.user.id && message.embeds.some((embed) =>
+                /witaj|dobrze, że jesteś/i.test(embed.title ?? '') && embed.description?.includes(`<@${id}>`) &&
+                (Date.parse(embed.timestamp) === member.joinedTimestamp ||
+                  Math.abs(message.createdTimestamp - member.joinedTimestamp) < 30_000))));
+            if (!known) {
+              await channel.send({
+                embeds: [welcomeCard(guild, id).setTimestamp(member.joinedTimestamp)], allowedMentions: NO_MENTIONS,
+                ...joinDeliveryOptions(member),
+              });
+              welcomes++;
+            }
+            welcomeDeliveries.set(key, now);
+          }
+        })().catch(logError);
+      }
+      if (missingLogs.length) {
+        await (async () => {
+          const state = getState();
+          const channel = await privateModerationChannel(guild, state, { name: 'log-wejscia' }).catch((error) => {
+            if (!(error instanceof SetupError)) throw error;
+            return privateModerationChannel(guild, state);
+          });
+          const history = await channel.messages.fetch({ limit: 100 });
+          for (const member of missingLogs) {
+            const key = joinDeliveryKey(member);
+            if (joinLogDeliveries.has(key)) continue;
+            const known = history.some((message) => message.author.id === client.user.id &&
+              message.embeds.some((embed) => embed.title === joinTitle && embed.description?.split('\n')[0] === label(member.user) &&
+                (Date.parse(embed.timestamp) === member.joinedTimestamp ||
+                  Math.abs(message.createdTimestamp - member.joinedTimestamp) < 30_000)));
+            if (!known) {
+              await channel.send({
+                embeds: [card(joinTitle, joinDescription(member, member.joinedTimestamp)).setTimestamp(member.joinedTimestamp)],
+                allowedMentions: NO_MENTIONS, ...joinDeliveryOptions(member),
+              });
+              logs++;
+            }
+            joinLogDeliveries.set(key, now);
+          }
+        })().catch(logError);
+      }
+      if (report || welcomes || logs) {
+        console.log(`Sprawdzono ostatnie dołączenia: ${candidates.length}. Uzupełniono powitania: ${welcomes}, logi: ${logs}. Kanał wejść: ${getState().channels['log-wejscia']}.`);
+      }
+    } finally { checkingJoins = false; }
   }
 
   function farewellCard(user) {
@@ -366,7 +464,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
           (message.type === MessageType.UserJoin && message.author.id === member.id) ||
           (message.author.id === client.user.id && message.embeds.some((embed) =>
             /witaj|dobrze, że jesteś/i.test(embed.title ?? '') && embed.description?.includes(`<@${member.id}>`)))))) continue;
-      await recover(welcome, welcomeCard(member.id), timestamp, 'Uzupełnione powitanie');
+      await recover(welcome, welcomeCard(guild, member.id), timestamp, 'Uzupełnione powitanie');
       joined++;
     }
     for (const message of [...entries.values()].reverse()) {
@@ -399,10 +497,10 @@ export function createSecurity({ client, guildId, getState, logError }) {
     if (welcome && farewell && from < to && to <= Date.now()) {
       await recoverMemberNotices(guild, welcome, farewell, from, to);
     }
-    await checkRecentKicks(guild, true);
+    await Promise.all([checkRecentKicks(guild, true).catch(logError), checkRecentJoins(guild, true).catch(logError)]);
   }
 
-  async function post(guild, name, embed) {
+  async function post(guild, name, embed, options = {}) {
     const state = getState();
     const notice = memberNoticeChannels.includes(name);
     if (!active(guild) || (!notice && !state.channels[name])) return;
@@ -411,7 +509,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
         ? await privateModerationChannel(guild, state, { force: false, name })
         : await guild.channels.fetch(state.channels[name]);
       if (notice || channel?.type === ChannelType.GuildText) {
-        return await channel.send({ embeds: [embed], allowedMentions: NO_MENTIONS });
+        return await channel.send({ embeds: [embed], allowedMentions: NO_MENTIONS, ...options });
       }
     } catch (error) {
       if (notice) console.warn(`Powiadomienia ${name}: wysyłka nie powiodła się.`);
@@ -419,15 +517,15 @@ export function createSecurity({ client, guildId, getState, logError }) {
     }
   }
 
-  function log(guild, destination, title, description, color) {
+  function log(guild, destination, title, description, color, options) {
     const exact = {
-      '📥 Wejście na serwer': 'log-wejscia',
+      [joinTitle]: 'log-wejscia',
       [departureTitle]: 'log-wyjscia',
       '✏️ Edycja wiadomości': 'log-edytowane',
       '🗑️ Usunięcie wiadomości': 'log-usuniete',
       '🧹 Zbiorcze usuwanie wiadomości': 'log-usuniete',
     }[title];
-    return post(guild, getState().channels[exact] ? exact : destination, card(title, description, color));
+    return post(guild, getState().channels[exact] ? exact : destination, card(title, description, color), options);
   }
 
   function stats(guild) {
@@ -769,12 +867,14 @@ export function createSecurity({ client, guildId, getState, logError }) {
         if (alert) await log(guild, 'log-ochrona', '🚨 Wykryto falę dołączeń',
           `W ciągu 20 sekund dołączyło ${joins.size} różnych osób, w tym ${freshCount} z kontem młodszym niż 7 dni. Ręczna ocena weryfikacji przez 10 minut.`, 0xE85D75);
       }
-      const welcome = await post(guild, 'witamy', welcomeCard(user.id));
-      if (welcome) console.log('Wysłano automatyczne powitanie w kanale witamy.');
+      const welcome = await post(guild, 'witamy', welcomeCard(guild, user.id), joinDeliveryOptions(member));
+      if (welcome) {
+        welcomeDeliveries.set(joinDeliveryKey(member), now);
+        console.log('Wysłano automatyczne powitanie w kanale witamy.');
+      }
     }
-    const createdAt = Math.floor(user.createdTimestamp / 1000);
-    await log(guild, 'logi-bota', '📥 Wejście na serwer',
-      `${label(user)}\nWiek konta: **${accountAge(user, now)}**\nUtworzone: <t:${createdAt}:F> (<t:${createdAt}:R>).\nLiczba kont na serwerze: **${guild.memberCount}**.${!user.bot && accountIsNew ? '\n⚠️ Nowe konto. Weryfikacja wymaga decyzji moderatora.' : ''}`);
+    const logged = await log(guild, 'logi-bota', joinTitle, joinDescription(member, now), undefined, joinDeliveryOptions(member));
+    if (logged) joinLogDeliveries.set(joinDeliveryKey(member), now);
   });
   on(Events.GuildMemberRemove, async (member) => {
     if (!active(member.guild)) return;
@@ -907,6 +1007,10 @@ export function createSecurity({ client, guildId, getState, logError }) {
     const guild = client.guilds.cache.get(guildId);
     checkRecentKicks(guild).catch(logError);
   }, 30_000).unref();
+  setInterval(() => {
+    const guild = client.guilds.cache.get(guildId);
+    checkRecentJoins(guild).catch(logError);
+  }, 60_000).unref();
   setInterval(() => {
     const guild = client.guilds.cache.get(guildId);
     if (active(guild)) refreshStats(guild).catch(logError);
