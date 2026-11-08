@@ -12,6 +12,7 @@ import { createMusic, removeMusicPanel } from './music.mjs';
 import { createJockiePanel } from './jockie-panel.mjs';
 import { createCommunityPlus } from './community-plus.mjs';
 import { createWebAdmin, webLoginCommand } from './web-admin.mjs';
+import { giveStaffPoint, setupStaffPoints, staffPointCommands } from './staff-points.mjs';
 import {
   applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
   SetupError, styleManagedRoles, withSetupLock,
@@ -65,6 +66,7 @@ const commands = [
       .addChoices({ name: 'Dodaj', value: 'add' }, { name: 'Usuń', value: 'remove' })),
   cleanupCommand,
   ...securityCommands,
+  ...staffPointCommands,
   new SlashCommandBuilder().setName('ogloszenie').setDescription('Opublikuj kartę ogłoszenia lub wydarzenia.')
     .addStringOption((option) => option.setName('kanal').setDescription('Gdzie opublikować kartę').setRequired(true)
       .addChoices({ name: 'Ogłoszenia', value: 'ogloszenia' }, { name: 'Wydarzenia i turnieje', value: 'wydarzenia' }))
@@ -497,6 +499,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       else if (interaction.commandName === 'zglos') result = await submitReport(interaction);
       else if (interaction.commandName === 'weryfikacja') result = await security.review(interaction, member);
       else if (interaction.commandName === 'moderacja') result = await security.moderate(interaction, member);
+      else if (staffPointCommands.some(({ name }) => name === interaction.commandName)) {
+        result = await giveStaffPoint(interaction, member, journal.state, logError);
+      }
       else if (interaction.commandName === 'ogloszenie') result = await announce(interaction, member);
       else result = security.statisticsReply(interaction.guild);
     }
@@ -528,7 +533,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     return;
   }
   const registeredCommands = [...(process.env.DISCORD_SLASH_COMMANDS === 'true' ? commands
-    : configuredCleanupRole() ? [cleanupCommand] : []), ...(webAdmin ? [webLoginCommand] : [])];
+    : [...staffPointCommands, ...(configuredCleanupRole() ? [cleanupCommand] : [])]), ...(webAdmin ? [webLoginCommand] : [])];
   if (registeredCommands.length) {
     const route = Routes.applicationGuildCommands(readyClient.application.id, guild.id);
     for (const command of registeredCommands) {
@@ -548,6 +553,9 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error(startupSummary);
   }
   await security.prepareMemberNotices(guild).catch(logError);
+  await withConfiguration(() => setupStaffPoints(guild, journal)).then(() => {
+    console.log('Punkty administracji: przygotowano 5 rang plusów i 3 rangi minusów.');
+  }).catch(logError);
   await security.prepareBoostThanks(guild).catch(logError);
   await refreshRoleMenu(guild, journal.state).catch(logError);
   if (music) await withConfiguration(() => music.setup(guild, journal)).catch((error) => {

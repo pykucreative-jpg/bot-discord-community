@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
 
 const moderation = ['ManageMessages', 'ManageThreads', 'ModerateMembers', 'KickMembers'];
+export const panelRoleId = '1568431258550272087';
 export const roles = [
   { key: 'blocked', name: 'Weryfikacja wstrzymana' },
   { key: 'review', name: 'Oczekuje na weryfikację' },
@@ -115,6 +116,8 @@ export const categories = [
       { name: 'mod-log', label: 'modzi', emoji: '🛡️', legacyEmoji: '📋', layout: 5,
         topic: 'Prywatny czat moderatorów.' },
       { name: 'panel-moderacji', emoji: '🛠️', topic: 'Panel i narzędzia moderacji.', access: 'logs' },
+      { name: 'staff-records', label: 'ostrzezenia-administracji', emoji: '⚖️',
+        topic: 'Prywatne plusy, minusy i degradacje ekipy.', access: 'staff-records' },
     ],
   },
   {

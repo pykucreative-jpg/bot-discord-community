@@ -5,7 +5,7 @@ import {
   ActionRowBuilder, AutoModerationActionType, AutoModerationRuleEventType, AutoModerationRuleTriggerType,
   ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, OverwriteType, PermissionsBitField, RESTJSONErrorCodes,
 } from 'discord.js';
-import { categories, categoryLabel, channelLabel, plusLogs, roleLabel, roles, starterMessages } from './plan.mjs';
+import { categories, categoryLabel, channelLabel, panelRoleId, plusLogs, roleLabel, roles, starterMessages } from './plan.mjs';
 import { communityButtons, staffButtons, verificationButton } from './panels.mjs';
 import { makeRolePanel } from './role-panel.mjs';
 
@@ -217,7 +217,7 @@ export async function lockReadOnlyChannel(channel, state) {
   const item = channelEntries.find(({ channel: definition }) => state.channels[definition.name] === channel.id);
   const access = item?.channel.access ?? item?.category.access;
   const guild = channel.guild;
-  if (access === 'mods' || access === 'logs') {
+  if (['mods', 'logs', 'staff-records'].includes(access)) {
     const permissionOverwrites = overwrites(guild, state, access);
     if (!matchesOverwrites(channel.permissionOverwrites.cache, permissionOverwrites)) {
       await channel.edit({ permissionOverwrites, reason: 'Prywatny dostęp do kanału tylko dla moderacji' });
@@ -284,6 +284,14 @@ function overwrites(guild, state, access) {
   const bot = guild.client.user.id;
   const hide = { id: everyone, type: OverwriteType.Role, allow: [], deny: ['ViewChannel'] };
   const botAccess = allow(bot, [...read, ...write], OverwriteType.Member);
+  if (access === 'staff-records') {
+    return [
+      { ...hide, deny: [...hide.deny, ...noWrite] },
+      botAccess,
+      ...[...new Set([state.roles.admin, guild.roles.cache.has(panelRoleId) ? panelRoleId : undefined])]
+        .filter(Boolean).map((id) => allow(id, read)),
+    ];
+  }
   if (access === 'mods' || access === 'logs') {
     return [
       { ...hide, deny: [...hide.deny, ...noWrite] },
@@ -438,7 +446,7 @@ async function finishSetup(guild, { state, save }) {
   await positionStats(guild, state);
   const currentChannels = await guild.channels.fetch();
   for (const { category, channel } of channelEntries) {
-    if (['lobby', 'read', 'events', 'mods', 'logs'].includes(channel.access ?? category.access)) {
+    if (['lobby', 'read', 'events', 'mods', 'logs', 'staff-records'].includes(channel.access ?? category.access)) {
       await lockReadOnlyChannel(currentChannels.get(state.channels[channel.name]), state);
     }
   }
@@ -570,7 +578,7 @@ export async function privateModerationChannel(guild, state, { force = true, nam
   const actual = channel?.permissionOverwrites?.cache;
   const botMentionAccess = name === 'log-bany' && expected.map((entry) => entry.id === guild.client.user.id
     ? { ...entry, allow: [...entry.allow, 'MentionEveryone'] } : entry);
-  if (!['logs', 'mods'].includes(access) || channel?.type !== ChannelType.GuildText ||
+  if (!['logs', 'mods', 'staff-records'].includes(access) || channel?.type !== ChannelType.GuildText ||
       channel.parentId !== state.categories[ticketArchive ? 'ticket-help' : extraLog ? 'bot-logs' : item.category.key] ||
       !(matchesOverwrites(actual, expected) || (botMentionAccess && matchesOverwrites(actual, botMentionAccess)))) {
     throw new SetupError('Prywatny kanał modów wymaga sprawdzenia uprawnień przez administrację.');

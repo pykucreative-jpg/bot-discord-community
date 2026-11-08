@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { ChannelType, MessageFlags, PermissionFlagsBits, Routes, SlashCommandBuilder } from 'discord.js';
+import { panelRoleId } from './plan.mjs';
 
 const idPattern = /^\d{17,20}$/;
 const textTypes = [ChannelType.GuildText, ChannelType.GuildAnnouncement];
@@ -28,7 +29,6 @@ const clean = (value, max) => String(value ?? '').trim().replace(/[\r\n]+/g, ' '
 const loginTtl = 120_000;
 const sessionTtl = 30 * 60_000;
 const commandName = 'panel-login';
-const panelRoleId = '1568431258550272087';
 export const webLoginCommand = new SlashCommandBuilder().setName(commandName)
   .setDescription('Potwierdź jednorazowy kod logowania do panelu Po Godzinach.')
   .addStringOption((option) => option.setName('kod').setDescription('Kod wyświetlony na stronie').setRequired(true));
