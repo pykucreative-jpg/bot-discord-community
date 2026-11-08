@@ -1,5 +1,5 @@
 import {
-  ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, MessageFlags,
+  ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, Events, MessageFlags, MessageType,
   ModalBuilder, TextInputBuilder, TextInputStyle,
 } from 'discord.js';
 import { musicPanelKey } from './plan.mjs';
@@ -10,6 +10,8 @@ const prefix = 'community:jockie:';
 const messageKey = 'jockie-panel';
 const docs = 'https://www.jockiemusic.com/commands';
 const noMentions = { parse: [] };
+const replyLifetime = 60_000;
+const memberMessageLifetime = 8_000;
 const controls = {
   queue: ['📋', 'Kolejka', 'queue'],
   playing: ['🎶', 'Teraz gra', 'now playing'],
@@ -31,6 +33,8 @@ function panelPayload() {
         '**1.** Dołącz do kanału głosowego.',
         '**2.** Wybierz **Dodaj utwór** i wpisz tytuł albo wklej link Spotify.',
         '**3.** Skopiuj gotową komendę i wyślij ją tutaj. Jockie dołączy do Twojego głosowego.',
+        '',
+        '🧹 Komendy i wiadomości znikają po 8 s, a odpowiedzi Jockie po minucie.',
       ].join('\n'))
       .addFields(
         { name: '🎵 Szybki start', value: '`m!play wykonawca i tytuł`', inline: true },
@@ -58,8 +62,38 @@ async function grant(channel, target, permissions) {
   }
 }
 
-export function createJockiePanel({ logError }) {
+export function createJockiePanel({ client, logError }) {
   let panel;
+  let cleanupChannel;
+  const scheduled = new Set();
+
+  function lifetime(message) {
+    if (!cleanupChannel || message?.channelId !== cleanupChannel.id || message.pinned) return 0;
+    if (jockieIds.includes(message.author?.id)) return replyLifetime;
+    if (message.author && !message.author.bot && !message.system) return memberMessageLifetime;
+    if (message.type === MessageType.ChannelPinnedMessage && message.author?.id === client.user.id &&
+      message.reference?.messageId === panel?.id) return memberMessageLifetime;
+    return 0;
+  }
+
+  function scheduleCleanup(message) {
+    const ttl = lifetime(message);
+    if (!ttl || scheduled.has(message.id)) return;
+    scheduled.add(message.id);
+    const delay = Math.max(0, message.createdTimestamp + ttl - Date.now());
+    setTimeout(async () => {
+      try {
+        const latest = await message.channel.messages.fetch({ message: message.id, force: true });
+        if (lifetime(latest) && latest.deletable) await latest.delete();
+      } catch (error) {
+        if (Number(error.code) !== 10008) logError(error);
+      } finally {
+        scheduled.delete(message.id);
+      }
+    }, delay).unref();
+  }
+
+  client.on(Events.MessageCreate, scheduleCleanup);
 
   async function setup(guild, { state, save }) {
     const id = state.channels[musicPanelKey];
@@ -82,7 +116,7 @@ export function createJockiePanel({ logError }) {
     }
     const isPanel = (message) => message?.author.id === guild.client.user.id &&
       message.components.some((row) => row.components.some((item) => item.customId === prefix + 'play'));
-    const history = await channel.messages.fetch({ limit: 25 });
+    const history = await channel.messages.fetch({ limit: 100 });
     const saved = history.get(state.messages[messageKey]);
     panel = isPanel(saved) ? saved : history.find(isPanel);
     if (!panel && state.messages[messageKey]) {
@@ -95,6 +129,17 @@ export function createJockiePanel({ logError }) {
     state.messages[messageKey] = panel.id;
     await save();
     console.log(`Panel Jockie Music gotowy: kanał ${channel.id}, wiadomość ${panel.id}; boty ${bots.length}, głosowe ${voiceChannels.size}.`);
+    const bot = await guild.members.fetchMe();
+    await grant(channel, bot, ['ManageMessages']);
+    cleanupChannel = channel;
+    const replies = history.filter(lifetime);
+    replies.forEach(scheduleCleanup);
+    console.log(`Sprzątanie Jockie Music w kanale ${channel.id}: odpowiedzi po 60 s, wiadomości użytkowników po 8 s; oczekujące: ${replies.size}.`);
+    if (!panel.pinned) {
+      await grant(channel, bot, ['PinMessages']);
+      await panel.pin('Stały panel muzyczny');
+    }
+    console.log(`Panel Jockie Music przypięty: ${panel.id}.`);
   }
 
   async function handle(interaction) {

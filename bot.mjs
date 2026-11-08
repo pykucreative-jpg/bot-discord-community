@@ -87,7 +87,7 @@ const cleanup = createCleanup();
 const security = createSecurity({ client, guildId, getState: () => journal.state, logError });
 const tickets = createTickets({ getState: () => journal.state, log: security.log, logError });
 const music = process.env.DISCORD_MUSIC === 'true' ? createMusic({ client, getState: () => journal.state, logError }) : undefined;
-const jockie = process.env.DISCORD_JOCKIE_PANEL === 'true' ? createJockiePanel({ logError }) : undefined;
+const jockie = process.env.DISCORD_JOCKIE_PANEL === 'true' ? createJockiePanel({ client, logError }) : undefined;
 const changingRoles = new Set();
 let building = false;
 let startupSummary = 'Bot uruchamia konfigurację.';
