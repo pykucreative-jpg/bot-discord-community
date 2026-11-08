@@ -10,7 +10,7 @@ import { boostSystemSettings, createSecurity, securityCommands } from './securit
 import { createTickets } from './tickets.mjs';
 import {
   applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
-  SetupError, withSetupLock,
+  SetupError, styleManagedRoles, withSetupLock,
 } from './setup.mjs';
 
 const snowflake = /^\d{17,20}$/;
@@ -112,12 +112,14 @@ async function runSetup(guild, notify = async () => {}) {
       const logPlan = await inspect(guild, journal.state, 'bot-logs');
       await notify();
       await applyChannels(guild, journal, logPlan);
+      await styleManagedRoles(guild, journal.state);
       const protection = await installProtection(guild, journal.state);
       startupSummary = `Kanały logów gotowe w kategorii ${journal.state.categories['bot-logs']}.\n${protection}\nPozostała konfiguracja: ${error.message}`;
       return startupSummary;
     }
     await notify();
     const messages = await applySetup(guild, journal, plan);
+    await styleManagedRoles(guild, journal.state);
     const verificationStatus = await security.gateRoles(guild, true).then(() => {
       console.log('Role weryfikacji są gotowe do nadawania.');
       return '';

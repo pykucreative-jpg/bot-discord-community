@@ -5,7 +5,7 @@ import {
   ActionRowBuilder, AutoModerationActionType, AutoModerationRuleEventType, AutoModerationRuleTriggerType,
   ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, OverwriteType, PermissionsBitField, RESTJSONErrorCodes,
 } from 'discord.js';
-import { categories, categoryLabel, channelLabel, roles, starterMessages } from './plan.mjs';
+import { categories, categoryLabel, channelLabel, roleLabel, roles, starterMessages } from './plan.mjs';
 import { communityButtons, staffButtons, verificationButton } from './panels.mjs';
 import { makeRolePanel } from './role-panel.mjs';
 
@@ -119,10 +119,10 @@ export async function inspect(guild, state, categoryScope) {
   if (categoryScope && moderators.some((key) => !serverRoles.has(state.roles[key]))) {
     throw new SetupError('Do prywatnych logów potrzebne są istniejące role Moderator i Administrator.');
   }
-  const newRoles = categoryScope ? [] : roles.filter(({ key, name }) => checkResource(
-    state.roles[key], name, serverRoles,
+  const newRoles = categoryScope ? [] : roles.filter((definition) => checkResource(
+    state.roles[definition.key], definition.name, serverRoles,
     (role) => role && !role.managed,
-    (role) => sameName(role.name, name),
+    (role) => sameName(role.name, definition.name) || sameName(role.name, roleLabel(definition)),
   ));
   const newCategories = scopedCategories.filter((category) => checkResource(
     state.categories[category.key], categoryLabel(category), serverChannels,
@@ -325,6 +325,29 @@ async function orderRoles(guild, state) {
   if (!inOrder(managed.map(({ id }) => updated.get(id)))) {
     throw new SetupError('Discord nie zapisał hierarchii ról. Sprawdź pozycję roli bota i uruchom konfigurację ponownie.');
   }
+}
+
+export async function styleManagedRoles(guild, state) {
+  const current = await guild.roles.fetch();
+  let styled = 0;
+  const skipped = [];
+  for (const definition of roles) {
+    const role = current.get(state.roles[definition.key]);
+    if (!role || role.name !== definition.name) continue;
+    if (!role.editable) {
+      skipped.push(role.name);
+      continue;
+    }
+    try {
+      await role.setName(roleLabel(definition), 'Ozdobna nazwa rangi bota');
+      styled++;
+    } catch (error) {
+      console.warn(`Zmiana nazwy rangi ${definition.name}: ${error.code ?? error.name}.`);
+      skipped.push(definition.name);
+    }
+  }
+  console.log(`Ozdobiono rangi bota: ${styled}.`);
+  if (skipped.length) console.warn(`Rangi niedostępne do edycji: ${skipped.join(', ')}.`);
 }
 
 export async function applySetup(guild, journal, plan) {

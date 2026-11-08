@@ -27,6 +27,16 @@ export const roles = [
   },
 ];
 
+const roleOrnaments = {
+  blocked: '🔒', review: '⏳', verified: '✅',
+  woman: '♀️', man: '♂️', nonbinary: '🌈',
+  age13: '🗓️', age18: '🗓️', age25: '🗓️', age35: '🗓️',
+  gaming: '🎮', music: '🎵', tech: '💻', events: '🔔',
+  member: '👥', vip: '💎', organizer: '🎯', helper: '🛟', mod: '🛡️', admin: '👑',
+};
+
+export const roleLabel = (role) => `「${roleOrnaments[role.key]}」${role.name}`;
+
 export const roleMenus = [
   { key: 'plec', label: '👤  Płeć (opcjonalnie)', multiple: false },
   { key: 'wiek', label: '🗓️  Przedział wiekowy (opcjonalnie)', multiple: false },
@@ -155,7 +165,7 @@ export const starterMessages = {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   console.log('Role od najniższej do najwyższej:');
-  for (const role of roles) console.log(`- ${role.name}${role.group ? ' (do wyboru)' : ''}`);
+  for (const role of roles) console.log(`- ${roleLabel(role)}${role.group ? ' (do wyboru)' : ''}`);
   console.log('\nKategorie i kanały:');
   for (const category of categories) {
     console.log(categoryLabel(category));
