@@ -9,4 +9,5 @@ ENV PATH="/opt/music/bin:${PATH}"
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 COPY *.mjs ./
+COPY web/ ./web/
 CMD ["node", "bot.mjs"]

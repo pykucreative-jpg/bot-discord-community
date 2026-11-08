@@ -1,9 +1,18 @@
 import { randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { ChannelType, MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
+import { ChannelType, MessageFlags, PermissionFlagsBits, Routes, SlashCommandBuilder } from 'discord.js';
 
 const idPattern = /^\d{17,20}$/;
 const textTypes = [ChannelType.GuildText, ChannelType.GuildAnnouncement];
+const channelKinds = { text: ChannelType.GuildText, voice: ChannelType.GuildVoice, category: ChannelType.GuildCategory };
+const staticFiles = {
+  '/': ['index.html', 'text/html; charset=utf-8'],
+  '/style.css': ['style.css', 'text/css; charset=utf-8'],
+  '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+  '/admin.js': ['admin.js', 'text/javascript; charset=utf-8'],
+  '/assets/avatar.png': ['assets/avatar.png', 'image/png'],
+};
 const permissionNames = {
   ViewChannel: 'Widoczność kanałów', SendMessages: 'Pisanie', ReadMessageHistory: 'Czytanie historii',
   EmbedLinks: 'Podgląd linków', AttachFiles: 'Załączniki', AddReactions: 'Reakcje',
@@ -13,6 +22,7 @@ const permissionNames = {
   ManageChannels: 'Zarządzanie kanałami', ManageRoles: 'Zarządzanie rolami', ManageGuild: 'Zarządzanie serwerem',
 };
 const editableMask = Object.keys(permissionNames).reduce((mask, name) => mask | PermissionFlagsBits[name], 0n);
+const channelPermissions = ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'Connect', 'Speak'];
 const token = () => randomBytes(32).toString('base64url');
 const clean = (value, max) => String(value ?? '').trim().replace(/[\r\n]+/g, ' ').slice(0, max);
 const loginTtl = 120_000;
@@ -39,7 +49,7 @@ async function json(request) {
   try { return JSON.parse(body); } catch { throw new HttpError(400, 'Nieprawidłowe dane.'); }
 }
 
-export function createWebAdmin({ client, origin, port, log, logError }) {
+export function createWebAdmin({ client, origin, port, log, logError, closeTicket, isTicket }) {
   if (!origin) return;
   const allowedOrigin = new URL(origin).origin;
   if (allowedOrigin !== origin || !origin.startsWith('https://')) throw new Error('Panel wymaga poprawnego adresu HTTPS.');
@@ -111,9 +121,9 @@ export function createWebAdmin({ client, origin, port, log, logError }) {
   const above = (actor, role) => actor.id === guild.ownerId || actor.roles.highest.comparePositionTo(role) > 0;
   const account = (member) => ({ id: member.id, name: member.displayName, roles: member.roles.cache.map(({ id }) => id) });
 
-  async function visibleChannel(actor, id, permission) {
+  async function visibleChannel(actor, id, permission, types = textTypes) {
     const channel = await guild.channels.fetch(entityId(id), { force: true }).catch(() => null);
-    required(textTypes.includes(channel?.type), 'Kanał nie jest dostępny.', 404);
+    required(types.includes(channel?.type), 'Kanał nie jest dostępny.', 404);
     required(channel.permissionsFor(actor)?.has(['ViewChannel', permission]));
     return channel;
   }
@@ -138,18 +148,27 @@ export function createWebAdmin({ client, origin, port, log, logError }) {
       const [channels, roles] = await Promise.all([guild.channels.fetch(), guild.roles.fetch()]);
       return {
         actor: actor.displayName, guild: guild.name,
-        channels: channels.filter((channel) => textTypes.includes(channel?.type) &&
-          channel.permissionsFor(actor)?.has(['ViewChannel', 'ReadMessageHistory'])).sort((a, b) => a.rawPosition - b.rawPosition)
+        channels: channels.filter((channel) => [...Object.values(channelKinds), ChannelType.GuildAnnouncement].includes(channel?.type) &&
+          channel.permissionsFor(actor)?.has('ViewChannel')).sort((a, b) => a.rawPosition - b.rawPosition)
           .map((channel) => ({ id: channel.id, name: channel.name, group: channel.parent?.name ?? '', topic: channel.topic,
-            slow: channel.rateLimitPerUser ?? 0,
-            editable: channel.permissionsFor(actor)?.has('ManageChannels') })),
+            slow: channel.rateLimitPerUser ?? 0, category: channel.type === ChannelType.GuildCategory,
+            text: textTypes.includes(channel.type), ticket: isTicket(channel),
+            editable: channel.manageable && channel.permissionsFor(actor)?.has('ManageChannels') })),
         roles: roles.filter((role) => role.id !== guild.id).sort((a, b) => b.comparePositionTo(a)).map((role) => ({
           id: role.id, name: role.name, color: role.hexColor,
           editable: actor.permissions.has('ManageRoles') && role.editable && !role.managed && above(actor, role),
           permissions: Object.keys(permissionNames).filter((permission) => role.permissions.has(permission, false)),
         })),
-        permissionNames,
+        permissionNames, channelPermissions, everyone: guild.id,
       };
+    }
+    if (path === '/v1/channels/access' && method === 'GET') {
+      const channel = await visibleChannel(actor, search.get('channel'), 'ManageRoles', [...Object.values(channelKinds), ChannelType.GuildAnnouncement]);
+      required(!isTicket(channel));
+      const roleId = entityId(search.get('role'));
+      const overwrite = channel.permissionOverwrites.cache.get(roleId);
+      return Object.fromEntries(channelPermissions.map((permission) => [permission, overwrite?.allow.has(permission, false) ? 'allow' :
+        overwrite?.deny.has(permission, false) ? 'deny' : 'inherit']));
     }
     if (path === '/v1/messages' && method === 'GET') {
       const channel = await visibleChannel(actor, search.get('channel'), 'ReadMessageHistory');
@@ -157,7 +176,7 @@ export function createWebAdmin({ client, origin, port, log, logError }) {
       const before = search.get('before');
       const messages = await channel.messages.fetch({ limit: 25, cache: false, ...(before ? { before: entityId(before) } : {}) });
       return { before: messages.size === 25 ? messages.lastKey() : null, messages: messages.map((message) => ({
-        author: message.author.globalName ?? message.author.username, at: message.createdTimestamp,
+        id: message.id, author: message.author.globalName ?? message.author.username, at: message.createdTimestamp,
         text: message.content, attachments: message.attachments.map(({ name }) => name),
         embeds: message.embeds.map(({ title, description }) => clean(title || description, 300)).filter(Boolean),
       })) };
@@ -169,6 +188,24 @@ export function createWebAdmin({ client, origin, port, log, logError }) {
     }
     if (method !== 'POST') throw new HttpError(404, 'Brak takiej funkcji.');
     const value = await json(request);
+    required(value && typeof value === 'object' && !Array.isArray(value), 'Nieprawidłowe dane.', 400);
+    if (path === '/v1/roles/create') {
+      required(actor.permissions.has('ManageRoles') && guild.members.me.permissions.has('ManageRoles'));
+      const name = clean(value.name, 100);
+      required(name && /^#[\da-f]{6}$/i.test(value.color), 'Sprawdź nazwę i kolor roli.', 400);
+      const role = await guild.roles.create({ name, color: value.color, permissions: [], reason: reason('utworzenie roli') });
+      return { id: role.id };
+    }
+    if (path === '/v1/roles/edit' || path === '/v1/roles/delete') {
+      const role = await managedRole(actor, value.role);
+      if (path.endsWith('/delete')) await role.delete(reason('usunięcie roli'));
+      else {
+        const name = clean(value.name, 100);
+        required(name && /^#[\da-f]{6}$/i.test(value.color), 'Sprawdź nazwę i kolor roli.', 400);
+        await role.edit({ name, color: value.color, reason: reason('edycja roli') });
+      }
+      return { ok: true };
+    }
     if (path === '/v1/roles/permissions') {
       const role = await managedRole(actor, value.role);
       const selection = value.permissions;
@@ -190,13 +227,53 @@ export function createWebAdmin({ client, origin, port, log, logError }) {
       } else await member.roles.remove(role, reason('zdjęcie roli'));
       return { ok: true };
     }
-    if (path === '/v1/channels/edit') {
-      const channel = await visibleChannel(actor, value.channel, 'ManageChannels');
+    if (path === '/v1/channels/create') {
+      required(actor.permissions.has('ManageChannels') && guild.members.me.permissions.has('ManageChannels'));
+      const name = clean(value.name, 100);
+      required(name && Object.hasOwn(channelKinds, value.kind), 'Sprawdź nazwę i typ kanału.', 400);
+      const parent = value.parent ? await visibleChannel(actor, value.parent, 'ManageChannels', [ChannelType.GuildCategory]) : undefined;
+      required(!parent || value.kind !== 'category', 'Kategoria nie może mieć kategorii nadrzędnej.', 400);
+      const channel = await guild.channels.create({ name, type: channelKinds[value.kind], parent, reason: reason('utworzenie kanału') });
+      return { id: channel.id };
+    }
+    if (path === '/v1/channels/access') {
+      const channel = await visibleChannel(actor, value.channel, 'ManageRoles', [...Object.values(channelKinds), ChannelType.GuildAnnouncement]);
+      required(!isTicket(channel), 'Kanały zgłoszeń mają własne zasady dostępu.');
+      const role = value.role === guild.id ? guild.roles.everyone : await managedRole(actor, value.role);
+      const permission = value.permission;
+      required(channelPermissions.includes(permission) && ['allow', 'deny', 'inherit'].includes(value.access), 'Sprawdź ustawienie dostępu.', 400);
+      const botPermissions = channel.permissionsFor(guild.members.me);
+      required(botPermissions?.has(['ManageRoles', permission]) && actor.permissions.has(permission));
+      const state = value.access === 'inherit' ? null : value.access === 'allow';
+      await channel.permissionOverwrites.edit(role, { [permission]: state }, { reason: reason('zmiana dostępu do kanału') });
+      return { ok: true };
+    }
+    if (path === '/v1/channels/edit' || path === '/v1/channels/delete') {
+      const channel = await visibleChannel(actor, value.channel, 'ManageChannels', [...Object.values(channelKinds), ChannelType.GuildAnnouncement]);
+      required(channel.manageable);
+      required(!isTicket(channel), 'Zarządzaj tym kanałem przez zamknięcie zgłoszenia i zapis w archiwum.');
+      if (path.endsWith('/delete')) {
+        required(channel.deletable, 'Discord nie pozwala usunąć tego kanału.');
+        await channel.delete(reason('usunięcie kanału'));
+        return { ok: true };
+      }
       const name = clean(value.name, 100);
       const slow = Number(value.slow);
       required(name && Number.isInteger(slow) && slow >= 0 && slow <= 21600, 'Sprawdź nazwę i slowmode.', 400);
-      await channel.edit({ name, topic: clean(value.topic, 1024), rateLimitPerUser: slow, reason: reason('edycja kanału') });
+      const text = textTypes.includes(channel.type) ? { topic: clean(value.topic, 1024), rateLimitPerUser: slow } : {};
+      await channel.edit({ name, ...text, reason: reason('edycja kanału') });
       return { ok: true };
+    }
+    if (path === '/v1/messages/delete') {
+      const channel = await visibleChannel(actor, value.channel, 'ManageMessages');
+      required(channel.permissionsFor(guild.members.me)?.has(['ViewChannel', 'ManageMessages']));
+      await client.rest.delete(Routes.channelMessage(channel.id, entityId(value.message)), { reason: reason('usunięcie wiadomości') });
+      return { ok: true };
+    }
+    if (path === '/v1/tickets/close') {
+      const channel = await visibleChannel(actor, value.channel, 'ManageChannels');
+      required(isTicket(channel), 'Ten kanał nie jest zgłoszeniem.', 400);
+      return { message: await closeTicket({ guild, channelId: channel.id }, actor) };
     }
     if (path === '/v1/moderation') {
       const modes = { timeout: 'ModerateMembers', untimeout: 'ModerateMembers', kick: 'KickMembers', ban: 'BanMembers' };
@@ -230,8 +307,19 @@ export function createWebAdmin({ client, origin, port, log, logError }) {
       };
       try {
         const { pathname: path, searchParams } = new URL(request.url, 'http://panel.local');
+        if (request.method === 'GET' && Object.hasOwn(staticFiles, path)) {
+          const [file, type] = staticFiles[path];
+          const body = await readFile(new URL(`./web/${file}`, import.meta.url));
+          response.writeHead(200, {
+            'Content-Type': type, 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff',
+            'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY',
+            'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://discord.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+          });
+          return response.end(body);
+        }
         if (path === '/v1/health' && request.method === 'GET') return answer(200, { online: client.isReady() });
-        required(request.headers.origin === allowedOrigin);
+        if (!path.startsWith('/v1/')) return answer(404, { error: 'Nie znaleziono strony.' });
+        required(request.headers.origin === allowedOrigin || (request.method === 'GET' && !request.headers.origin));
         if (request.method === 'OPTIONS') return answer(204);
         if (path === '/v1/login' && request.method === 'POST') return answer(200, issue(request));
         if (path === '/v1/login/check' && request.method === 'POST') return answer(200, verifyLogin(await json(request)));

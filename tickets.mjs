@@ -260,7 +260,7 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
         scheduleRemoval(guild, channel.id, saved.id);
         return 'Rozmowa została zapisana dla moderacji. Kanał zgłoszenia zniknie za chwilę.';
       }
-      await interaction.message.edit({ components: [] }).catch(logError);
+      if (interaction.message) await interaction.message.edit({ components: [] }).catch(logError);
       await channel.send({ content: '🔒 Zgłoszenie zostało zamknięte. Historia jest dostępna do odczytu.',
         allowedMentions: noMentions }).catch(logError);
       await log(guild, 'log-tickety', '🔒 Zamknięcie zgłoszenia', `Kanał: <#${channel.id}>\nZamknął: <@${actor.id}>.`);
@@ -270,7 +270,7 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
     }
   }
 
-  return { setup, open, close };
+  return { setup, open, close, isTicket: (channel) => Boolean(ticketDetails(channel, getState())) };
 }
 
 function postOpening(channel, interaction, description) {

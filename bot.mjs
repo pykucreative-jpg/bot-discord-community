@@ -89,7 +89,9 @@ let journal = await loadState(guildId);
 const cleanup = createCleanup();
 const security = createSecurity({ client, guildId, getState: () => journal.state, logError });
 const webAdmin = createWebAdmin({ client, origin: process.env.DISCORD_WEB_ADMIN_ORIGIN,
-  port: Number(process.env.DISCORD_WEB_ADMIN_PORT ?? 8080), log: security.log, logError });
+  port: Number(process.env.DISCORD_WEB_ADMIN_PORT ?? 8080), log: security.log, logError,
+  closeTicket: (interaction, actor) => tickets.close(interaction, actor),
+  isTicket: (channel) => tickets.isTicket(channel) });
 const tickets = createTickets({ getState: () => journal.state, log: security.log, logError,
   archiveEnabled: process.env.DISCORD_COMMUNITY_PLUS === 'true' });
 const music = process.env.DISCORD_MUSIC === 'true' ? createMusic({ client, getState: () => journal.state, logError }) : undefined;
