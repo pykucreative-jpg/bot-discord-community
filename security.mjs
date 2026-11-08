@@ -15,6 +15,10 @@ const newAccountAge = 7 * DAY;
 const messageAgeLimit = 14 * DAY;
 const clearPreviewDuration = 5 * 60_000;
 const NO_MENTIONS = { parse: [] };
+const memberNoticeChannels = ['witamy', 'pozegnania'];
+const noticePermissions = ['ViewChannel', 'ReadMessageHistory', 'SendMessages', 'EmbedLinks'];
+const noticeTitles = ['👋 Witaj w Centrum Graczy!', '🌙 Do zobaczenia!'];
+const memberLogTitles = ['📥 Wejście na serwer', '📤 Opuszczenie serwera'];
 const auditActions = new Map(Object.entries({
   GuildUpdate: 'Zmieniono ustawienia serwera',
   ChannelCreate: 'Utworzono kanał', ChannelUpdate: 'Zmieniono ustawienia kanału', ChannelDelete: 'Usunięto kanał',
@@ -198,15 +202,75 @@ export function createSecurity({ client, guildId, getState, logError }) {
     return ids.includes(channel?.id) || (channel?.isThread?.() && ids.includes(channel.parentId));
   }
 
+  function isNoticeChannel(channel) {
+    return [ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel?.type);
+  }
+
+  async function noticeChannel(guild, name, force = false) {
+    const id = getState().channels[name];
+    const saved = id && await guild.channels.fetch(id, { force }).catch((error) => {
+      if (Number(error.code) !== 10003) throw error;
+    });
+    if (isNoticeChannel(saved)) return saved;
+    const channels = await guild.channels.fetch();
+    const matches = channels.filter((channel) => isNoticeChannel(channel) &&
+      channel.name.toLowerCase().replaceAll('ż', 'z').replace(/[^\p{L}\p{N}]/gu, '') === name);
+    if (matches.size === 1) return matches.first();
+    throw new SetupError(`Nie można jednoznacznie odnaleźć kanału ${name}.`);
+  }
+
+  on(Events.ClientReady, async () => {
+    const guild = await client.guilds.fetch(guildId);
+    if (!active(guild)) return;
+    const bot = await guild.members.fetchMe();
+    for (const name of memberNoticeChannels) {
+      try {
+        let channel = await noticeChannel(guild, name, true);
+        const permissions = channel.permissionsFor(bot);
+        const missing = noticePermissions.filter((permission) => !permissions?.has(permission));
+        if (missing.length) {
+          console.warn(`Powiadomienia ${name}: brak ${missing.join(', ')}.`);
+          await channel.permissionOverwrites.edit(bot, Object.fromEntries(missing.map((permission) => [permission, true])),
+            { reason: 'Przywrócenie powitań i pożegnań bota' });
+          channel = await noticeChannel(guild, name, true);
+        }
+        if (!channel.permissionsFor(bot)?.has(noticePermissions)) throw new SetupError('Brak uprawnień po zmianie.');
+        const history = await channel.messages.fetch({ limit: 100 });
+        const timestamps = history.filter((message) => message.author.id === client.user.id &&
+          message.embeds.some((embed) => embed.title === noticeTitles[memberNoticeChannels.indexOf(name)]))
+          .map((message) => new Date(message.createdTimestamp).toISOString());
+        console.log(`Powiadomienia ${name}: gotowe w ${channel.id}, typ ${channel.type}; historia ${timestamps.length} [${timestamps.slice(0, 10).join(', ')}].`);
+      } catch (error) {
+        console.warn(`Powiadomienia ${name}: kontrola kanału nie powiodła się.`);
+        logError(error);
+      }
+    }
+    const logChannel = await privateModerationChannel(guild, getState());
+    const logMessages = await logChannel.messages.fetch({ limit: 100 });
+    const events = logMessages.filter((message) => message.author.id === client.user.id &&
+      message.embeds.some((embed) => memberLogTitles.includes(embed.title)));
+    console.log(`Historia zdarzeń członków: ${events.map((message) => {
+      const embed = message.embeds.find((item) => memberLogTitles.includes(item.title));
+      return `${memberLogTitles.indexOf(embed.title)}:${new Date(message.createdTimestamp).toISOString()}`;
+    }).join(', ') || 'brak zdarzeń w ostatnich 100 zapisach'}.`);
+    const members = await guild.members.fetch();
+    console.log(`Daty dołączenia obecnych osób: ${members.filter((member) => !member.user.bot && member.joinedTimestamp)
+      .map((member) => new Date(member.joinedTimestamp).toISOString()).sort().slice(-10).join(', ')}.`);
+  });
+
   async function post(guild, name, embed) {
     const state = getState();
-    if (!active(guild) || !state.channels[name]) return;
+    const notice = memberNoticeChannels.includes(name);
+    if (!active(guild) || (!notice && !state.channels[name])) return;
     try {
-      const channel = name === 'logi-bota' || name.startsWith('log-')
+      const channel = notice ? await noticeChannel(guild, name) : name === 'logi-bota' || name.startsWith('log-')
         ? await privateModerationChannel(guild, state, { force: false, name })
         : await guild.channels.fetch(state.channels[name]);
-      if (channel?.type === ChannelType.GuildText) return await channel.send({ embeds: [embed], allowedMentions: NO_MENTIONS });
+      if (notice || channel?.type === ChannelType.GuildText) {
+        return await channel.send({ embeds: [embed], allowedMentions: NO_MENTIONS });
+      }
     } catch (error) {
+      if (notice) console.warn(`Powiadomienia ${name}: wysyłka nie powiodła się.`);
       if (!(error instanceof SetupError)) logError(error);
     }
   }
