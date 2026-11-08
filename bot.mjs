@@ -11,6 +11,7 @@ import { createTickets } from './tickets.mjs';
 import { createMusic, removeMusicPanel } from './music.mjs';
 import { createJockiePanel } from './jockie-panel.mjs';
 import { createCommunityPlus } from './community-plus.mjs';
+import { createWebAdmin, webLoginCommand } from './web-admin.mjs';
 import {
   applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
   SetupError, styleManagedRoles, withSetupLock,
@@ -87,6 +88,8 @@ const client = new Client({
 let journal = await loadState(guildId);
 const cleanup = createCleanup();
 const security = createSecurity({ client, guildId, getState: () => journal.state, logError });
+const webAdmin = createWebAdmin({ client, origin: process.env.DISCORD_WEB_ADMIN_ORIGIN,
+  port: Number(process.env.DISCORD_WEB_ADMIN_PORT ?? 8080), log: security.log, logError });
 const tickets = createTickets({ getState: () => journal.state, log: security.log, logError,
   archiveEnabled: process.env.DISCORD_COMMUNITY_PLUS === 'true' });
 const music = process.env.DISCORD_MUSIC === 'true' ? createMusic({ client, getState: () => journal.state, logError }) : undefined;
@@ -434,6 +437,7 @@ async function useControl(interaction, action, key, id) {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.inCachedGuild() || interaction.guildId !== guildId) return;
+  if (webAdmin && await webAdmin.handle(interaction).catch((error) => { logError(error); return true; })) return;
   if (communityPlus && await communityPlus.handle(interaction)) return;
   if (jockie && await jockie.handle(interaction)) return;
   if (music && await music.handle(interaction)) return;
@@ -521,8 +525,8 @@ client.once(Events.ClientReady, async (readyClient) => {
     process.exitCode = 1;
     return;
   }
-  const registeredCommands = process.env.DISCORD_SLASH_COMMANDS === 'true' ? commands
-    : configuredCleanupRole() ? [cleanupCommand] : [];
+  const registeredCommands = [...(process.env.DISCORD_SLASH_COMMANDS === 'true' ? commands
+    : configuredCleanupRole() ? [cleanupCommand] : []), ...(webAdmin ? [webLoginCommand] : [])];
   if (registeredCommands.length) {
     const route = Routes.applicationGuildCommands(readyClient.application.id, guild.id);
     for (const command of registeredCommands) {
@@ -530,6 +534,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     }
   }
   console.log(`Bot połączył się z serwerem „${guild.name}”. Rozpoczynam automatyczną konfigurację.`);
+  webAdmin?.start(guild);
   security.syncPresence(guild).then(() => security.refreshStats(guild)).catch(logError);
   try {
     console.log(await runSetup(guild));
