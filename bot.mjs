@@ -16,7 +16,7 @@ import { giveStaffPoint, setupStaffPoints, staffPointCommands } from './staff-po
 import {
   applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installInviteProtection, installProtection, loadState,
   privateModerationChannel, restrictChannelMentions, restrictRoleMentions,
-  SetupError, styleManagedRoles, withSetupLock,
+  SetupError, styleManagedRoles, syncStarterMessages, withSetupLock,
 } from './setup.mjs';
 
 const snowflake = /^\d{17,20}$/;
@@ -566,6 +566,11 @@ client.once(Events.ClientReady, async (readyClient) => {
       : 'Automatyczna konfiguracja została przerwana. Sprawdź połączenie i uprawnienia bota.';
     console.error(startupSummary);
   }
+  await withConfiguration(async () => {
+    if (!journal.state.channels.regulamin) return;
+    await syncStarterMessages(guild, journal, ['regulamin']);
+    console.log(`Regulamin i weryfikacja: kanał ${journal.state.channels.regulamin}, karta ${journal.state.messages.regulamin}, wersja ${journal.state.messageLayout.regulamin}.`);
+  }).catch(logError);
   await security.prepareMemberNotices(guild).catch(logError);
   await withConfiguration(async () => {
     const state = journal.state;

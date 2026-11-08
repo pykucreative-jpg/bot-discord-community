@@ -449,31 +449,11 @@ export async function applyChannels(guild, { state, save }, plan) {
   }
 }
 
-async function finishSetup(guild, { state, save }) {
-  await positionStats(guild, state);
-  const currentChannels = await guild.channels.fetch();
-  for (const { category, channel } of channelEntries) {
-    if (['lobby', 'read', 'events', 'mods', 'logs', 'staff-records', 'owner-records'].includes(channel.access ?? category.access)) {
-      await lockReadOnlyChannel(currentChannels.get(state.channels[channel.name]), state);
-    }
-  }
-  console.log('Kanały informacyjne do odczytu dla członków. Pisanie dla Moderatorów i Administratorów. Kanał modzi jest prywatny.');
-  const bot = await guild.members.fetchMe();
-  const messageChannels = await Promise.all(['witamy', 'pozegnania'].map((name) =>
-    guild.channels.fetch(state.channels[name], { force: true })));
-  if (messageChannels.every((channel) => channel?.permissionsFor(bot)?.has(['ViewChannel', 'SendMessages', 'EmbedLinks']))) {
-    console.log('Automatyczne powitania i pożegnania gotowe w kanałach witamy i pozegnania.');
-  } else {
-    console.warn('Sprawdź uprawnienia bota do pisania i osadzania kart w kanałach witamy i pozegnania.');
-  }
-  const adultChannel = await guild.channels.fetch(state.channels.nsfw, { force: true });
-  if (!adultChannel?.nsfw) {
-    await adultChannel.edit({ nsfw: true, reason: 'Przywrócenie ograniczenia wiekowego w strefie 18+' });
-  }
-
+export async function syncStarterMessages(guild, { state, save }, names = Object.keys(starterMessages)) {
   let messages = 0;
-  for (const [name, render] of Object.entries(starterMessages)) {
-    const version = messageVersion;
+  for (const name of names) {
+    const render = starterMessages[name];
+    const version = name === 'regulamin' ? 8 : messageVersion;
     const needsUpdate = state.messageLayout[name] !== version;
     const channel = await guild.channels.fetch(state.channels[name], { force: true });
     let saved;
@@ -523,6 +503,32 @@ async function finishSetup(guild, { state, save }) {
     await pinStaffPanel(name, posted);
     if (!previous) messages++;
   }
+  return messages;
+}
+
+async function finishSetup(guild, { state, save }) {
+  await positionStats(guild, state);
+  const currentChannels = await guild.channels.fetch();
+  for (const { category, channel } of channelEntries) {
+    if (['lobby', 'read', 'events', 'mods', 'logs', 'staff-records', 'owner-records'].includes(channel.access ?? category.access)) {
+      await lockReadOnlyChannel(currentChannels.get(state.channels[channel.name]), state);
+    }
+  }
+  console.log('Kanały informacyjne do odczytu dla członków. Pisanie dla Moderatorów i Administratorów. Kanał modzi jest prywatny.');
+  const bot = await guild.members.fetchMe();
+  const messageChannels = await Promise.all(['witamy', 'pozegnania'].map((name) =>
+    guild.channels.fetch(state.channels[name], { force: true })));
+  if (messageChannels.every((channel) => channel?.permissionsFor(bot)?.has(['ViewChannel', 'SendMessages', 'EmbedLinks']))) {
+    console.log('Automatyczne powitania i pożegnania gotowe w kanałach witamy i pozegnania.');
+  } else {
+    console.warn('Sprawdź uprawnienia bota do pisania i osadzania kart w kanałach witamy i pozegnania.');
+  }
+  const adultChannel = await guild.channels.fetch(state.channels.nsfw, { force: true });
+  if (!adultChannel?.nsfw) {
+    await adultChannel.edit({ nsfw: true, reason: 'Przywrócenie ograniczenia wiekowego w strefie 18+' });
+  }
+
+  const messages = await syncStarterMessages(guild, { state, save });
   state.staffPanelRedirects ??= {};
   for (const name of ['mod-log', 'logi-bota']) {
     if (!state.messages[name] || state.staffPanelRedirects[name]) continue;
