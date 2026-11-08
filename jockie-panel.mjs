@@ -10,7 +10,7 @@ const prefix = 'community:jockie:';
 const messageKey = 'jockie-panel';
 const docs = 'https://www.jockiemusic.com/commands';
 const noMentions = { parse: [] };
-const replyLifetime = 60_000;
+const replyLifetime = 15_000;
 const memberMessageLifetime = 8_000;
 const controls = {
   queue: ['📋', 'Kolejka', 'queue'],
@@ -34,7 +34,7 @@ function panelPayload() {
         '**2.** Wybierz **Dodaj utwór** i wpisz tytuł albo wklej link Spotify.',
         '**3.** Skopiuj gotową komendę i wyślij ją tutaj. Jockie dołączy do Twojego głosowego.',
         '',
-        '🧹 Komendy i wiadomości znikają po 8 s, a odpowiedzi Jockie po minucie.',
+        `🧹 Wiadomości znikają po ${memberMessageLifetime / 1000} s, a odpowiedzi Jockie po ${replyLifetime / 1000} s.`,
       ].join('\n'))
       .addFields(
         { name: '🎵 Szybki start', value: '`m!play wykonawca i tytuł`', inline: true },
@@ -134,7 +134,7 @@ export function createJockiePanel({ client, logError }) {
     cleanupChannel = channel;
     const replies = history.filter(lifetime);
     replies.forEach(scheduleCleanup);
-    console.log(`Sprzątanie Jockie Music w kanale ${channel.id}: odpowiedzi po 60 s, wiadomości użytkowników po 8 s; oczekujące: ${replies.size}.`);
+    console.log(`Sprzątanie Jockie Music w kanale ${channel.id}: odpowiedzi po ${replyLifetime / 1000} s, wiadomości użytkowników po ${memberMessageLifetime / 1000} s; oczekujące: ${replies.size}.`);
     if (!panel.pinned) {
       await grant(channel, bot, ['PinMessages']);
       await panel.pin('Stały panel muzyczny');
