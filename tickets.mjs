@@ -224,14 +224,14 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
     }
   }
 
-  async function close(interaction, actor) {
+  async function close(interaction, actor, { fromWebPanel = false } = {}) {
     const { guild } = interaction;
     const state = getState();
     const channel = await guild.channels.fetch(interaction.channelId, { force: true });
     const ticket = ticketDetails(channel, state);
     if (!ticket) throw new SetupError('Otwórz przycisk we właściwym kanale zgłoszenia.');
     const staff = [state.roles.mod, state.roles.admin].some((id) => actor.roles.cache.has(id));
-    if (actor.id !== ticket.userId && actor.id !== guild.ownerId &&
+    if (!fromWebPanel && actor.id !== ticket.userId && actor.id !== guild.ownerId &&
         !actor.permissions.has(PermissionFlagsBits.Administrator) && !staff) {
       throw new SetupError('Zgłoszenie może zamknąć jego autor lub moderacja.');
     }

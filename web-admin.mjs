@@ -28,6 +28,7 @@ const clean = (value, max) => String(value ?? '').trim().replace(/[\r\n]+/g, ' '
 const loginTtl = 120_000;
 const sessionTtl = 30 * 60_000;
 const commandName = 'panel-login';
+const panelRoleId = '1568431258550272087';
 export const webLoginCommand = new SlashCommandBuilder().setName(commandName)
   .setDescription('Potwierdź jednorazowy kod logowania do panelu Po Godzinach.')
   .addStringOption((option) => option.setName('kod').setDescription('Kod wyświetlony na stronie').setRequired(true));
@@ -70,9 +71,9 @@ export function createWebAdmin({ client, origin, port, log, logError, closeTicke
   setInterval(sweep, 30_000).unref();
 
   async function authorized(id) {
-    if (!guild || id !== guild.ownerId) return;
+    if (!guild) return;
     const member = await guild.members.fetch({ user: id, force: true }).catch(() => undefined);
-    return member && !member.user.bot && !member.pending && !member.isCommunicationDisabled() ? member : undefined;
+    return member && member.roles.cache.has(panelRoleId) && !member.user.bot && !member.pending && !member.isCommunicationDisabled() ? member : undefined;
   }
 
   async function handle(interaction) {
@@ -121,24 +122,23 @@ export function createWebAdmin({ client, origin, port, log, logError, closeTicke
   const above = (actor, role) => actor.id === guild.ownerId || actor.roles.highest.comparePositionTo(role) > 0;
   const account = (member) => ({ id: member.id, name: member.displayName, roles: member.roles.cache.map(({ id }) => id) });
 
-  async function visibleChannel(actor, id, permission, types = textTypes) {
+  async function visibleChannel(id, permission, types = textTypes) {
     const channel = await guild.channels.fetch(entityId(id), { force: true }).catch(() => null);
     required(types.includes(channel?.type), 'Kanał nie jest dostępny.', 404);
-    required(channel.permissionsFor(actor)?.has(['ViewChannel', permission]));
+    required(channel.permissionsFor(guild.members.me)?.has(['ViewChannel', permission]));
     return channel;
   }
 
   async function managedRole(actor, id) {
-    required(actor.permissions.has('ManageRoles'));
     const role = await guild.roles.fetch(entityId(id), { force: true }).catch(() => null);
-    required(role && role.id !== guild.id && !role.managed && role.editable && above(actor, role), 'Tej roli nie można zmienić z panelu.');
+    required(role && role.id !== guild.id && role.id !== panelRoleId && !role.managed && role.editable && above(actor, role), 'Tej roli nie można zmienić z panelu.');
     return role;
   }
 
   async function managedMember(actor, id) {
     const member = await guild.members.fetch({ user: entityId(id), force: true }).catch(() => null);
     required(member && member.id !== guild.ownerId && member.id !== actor.id && member.id !== client.user.id &&
-      member.manageable && above(actor, member.roles.highest), 'Hierarchia ról blokuje tę operację.');
+      !member.roles.cache.has(panelRoleId) && member.manageable && above(actor, member.roles.highest), 'Hierarchia ról blokuje tę operację.');
     return member;
   }
 
@@ -149,21 +149,21 @@ export function createWebAdmin({ client, origin, port, log, logError, closeTicke
       return {
         actor: actor.displayName, guild: guild.name,
         channels: channels.filter((channel) => [...Object.values(channelKinds), ChannelType.GuildAnnouncement].includes(channel?.type) &&
-          channel.permissionsFor(actor)?.has('ViewChannel')).sort((a, b) => a.rawPosition - b.rawPosition)
+          channel.permissionsFor(guild.members.me)?.has('ViewChannel')).sort((a, b) => a.rawPosition - b.rawPosition)
           .map((channel) => ({ id: channel.id, name: channel.name, group: channel.parent?.name ?? '', topic: channel.topic,
             slow: channel.rateLimitPerUser ?? 0, category: channel.type === ChannelType.GuildCategory,
             text: textTypes.includes(channel.type), ticket: isTicket(channel),
-            editable: channel.manageable && channel.permissionsFor(actor)?.has('ManageChannels') })),
+            editable: channel.manageable })),
         roles: roles.filter((role) => role.id !== guild.id).sort((a, b) => b.comparePositionTo(a)).map((role) => ({
           id: role.id, name: role.name, color: role.hexColor,
-          editable: actor.permissions.has('ManageRoles') && role.editable && !role.managed && above(actor, role),
+          editable: role.id !== panelRoleId && role.editable && !role.managed && above(actor, role),
           permissions: Object.keys(permissionNames).filter((permission) => role.permissions.has(permission, false)),
         })),
         permissionNames, channelPermissions, everyone: guild.id,
       };
     }
     if (path === '/v1/channels/access' && method === 'GET') {
-      const channel = await visibleChannel(actor, search.get('channel'), 'ManageRoles', [...Object.values(channelKinds), ChannelType.GuildAnnouncement]);
+      const channel = await visibleChannel(search.get('channel'), 'ManageRoles', [...Object.values(channelKinds), ChannelType.GuildAnnouncement]);
       required(!isTicket(channel));
       const roleId = entityId(search.get('role'));
       const overwrite = channel.permissionOverwrites.cache.get(roleId);
@@ -171,8 +171,7 @@ export function createWebAdmin({ client, origin, port, log, logError, closeTicke
         overwrite?.deny.has(permission, false) ? 'deny' : 'inherit']));
     }
     if (path === '/v1/messages' && method === 'GET') {
-      const channel = await visibleChannel(actor, search.get('channel'), 'ReadMessageHistory');
-      required(channel.permissionsFor(guild.members.me)?.has(['ViewChannel', 'ReadMessageHistory']), 'Bot nie ma dostępu do historii tego kanału.');
+      const channel = await visibleChannel(search.get('channel'), 'ReadMessageHistory');
       const before = search.get('before');
       const messages = await channel.messages.fetch({ limit: 25, cache: false, ...(before ? { before: entityId(before) } : {}) });
       return { before: messages.size === 25 ? messages.lastKey() : null, messages: messages.map((message) => ({
@@ -190,7 +189,7 @@ export function createWebAdmin({ client, origin, port, log, logError, closeTicke
     const value = await json(request);
     required(value && typeof value === 'object' && !Array.isArray(value), 'Nieprawidłowe dane.', 400);
     if (path === '/v1/roles/create') {
-      required(actor.permissions.has('ManageRoles') && guild.members.me.permissions.has('ManageRoles'));
+      required(guild.members.me.permissions.has('ManageRoles'));
       const name = clean(value.name, 100);
       required(name && /^#[\da-f]{6}$/i.test(value.color), 'Sprawdź nazwę i kolor roli.', 400);
       const role = await guild.roles.create({ name, color: value.color, permissions: [], reason: reason('utworzenie roli') });
@@ -214,7 +213,7 @@ export function createWebAdmin({ client, origin, port, log, logError, closeTicke
       const old = role.permissions.bitfield;
       const next = (old & ~editableMask) | wanted;
       const added = next & ~old;
-      required(actor.permissions.has(added) && guild.members.me.permissions.has(added), 'Brakuje uprawnień do nadania tych ustawień.');
+      required(guild.members.me.permissions.has(added), 'Brakuje uprawnień do nadania tych ustawień.');
       await role.setPermissions(next, reason('zmiana uprawnień roli'));
       return { ok: true };
     }
@@ -228,28 +227,28 @@ export function createWebAdmin({ client, origin, port, log, logError, closeTicke
       return { ok: true };
     }
     if (path === '/v1/channels/create') {
-      required(actor.permissions.has('ManageChannels') && guild.members.me.permissions.has('ManageChannels'));
+      required(guild.members.me.permissions.has('ManageChannels'));
       const name = clean(value.name, 100);
       required(name && Object.hasOwn(channelKinds, value.kind), 'Sprawdź nazwę i typ kanału.', 400);
-      const parent = value.parent ? await visibleChannel(actor, value.parent, 'ManageChannels', [ChannelType.GuildCategory]) : undefined;
+      const parent = value.parent ? await visibleChannel(value.parent, 'ManageChannels', [ChannelType.GuildCategory]) : undefined;
       required(!parent || value.kind !== 'category', 'Kategoria nie może mieć kategorii nadrzędnej.', 400);
       const channel = await guild.channels.create({ name, type: channelKinds[value.kind], parent, reason: reason('utworzenie kanału') });
       return { id: channel.id };
     }
     if (path === '/v1/channels/access') {
-      const channel = await visibleChannel(actor, value.channel, 'ManageRoles', [...Object.values(channelKinds), ChannelType.GuildAnnouncement]);
+      const channel = await visibleChannel(value.channel, 'ManageRoles', [...Object.values(channelKinds), ChannelType.GuildAnnouncement]);
       required(!isTicket(channel), 'Kanały zgłoszeń mają własne zasady dostępu.');
       const role = value.role === guild.id ? guild.roles.everyone : await managedRole(actor, value.role);
       const permission = value.permission;
       required(channelPermissions.includes(permission) && ['allow', 'deny', 'inherit'].includes(value.access), 'Sprawdź ustawienie dostępu.', 400);
       const botPermissions = channel.permissionsFor(guild.members.me);
-      required(botPermissions?.has(['ManageRoles', permission]) && actor.permissions.has(permission));
+      required(botPermissions?.has(permission));
       const state = value.access === 'inherit' ? null : value.access === 'allow';
       await channel.permissionOverwrites.edit(role, { [permission]: state }, { reason: reason('zmiana dostępu do kanału') });
       return { ok: true };
     }
     if (path === '/v1/channels/edit' || path === '/v1/channels/delete') {
-      const channel = await visibleChannel(actor, value.channel, 'ManageChannels', [...Object.values(channelKinds), ChannelType.GuildAnnouncement]);
+      const channel = await visibleChannel(value.channel, 'ManageChannels', [...Object.values(channelKinds), ChannelType.GuildAnnouncement]);
       required(channel.manageable);
       required(!isTicket(channel), 'Zarządzaj tym kanałem przez zamknięcie zgłoszenia i zapis w archiwum.');
       if (path.endsWith('/delete')) {
@@ -265,19 +264,18 @@ export function createWebAdmin({ client, origin, port, log, logError, closeTicke
       return { ok: true };
     }
     if (path === '/v1/messages/delete') {
-      const channel = await visibleChannel(actor, value.channel, 'ManageMessages');
-      required(channel.permissionsFor(guild.members.me)?.has(['ViewChannel', 'ManageMessages']));
+      const channel = await visibleChannel(value.channel, 'ManageMessages');
       await client.rest.delete(Routes.channelMessage(channel.id, entityId(value.message)), { reason: reason('usunięcie wiadomości') });
       return { ok: true };
     }
     if (path === '/v1/tickets/close') {
-      const channel = await visibleChannel(actor, value.channel, 'ManageChannels');
+      const channel = await visibleChannel(value.channel, 'ManageChannels');
       required(isTicket(channel), 'Ten kanał nie jest zgłoszeniem.', 400);
       return { message: await closeTicket({ guild, channelId: channel.id }, actor) };
     }
     if (path === '/v1/moderation') {
       const modes = { timeout: 'ModerateMembers', untimeout: 'ModerateMembers', kick: 'KickMembers', ban: 'BanMembers' };
-      required(Object.hasOwn(modes, value.action) && actor.permissions.has(modes[value.action]));
+      required(Object.hasOwn(modes, value.action) && guild.members.me.permissions.has(modes[value.action]));
       const member = await managedMember(actor, value.member);
       const note = clean(value.reason, 280);
       required(note.length >= 3, 'Wpisz powód operacji.', 400);
@@ -342,7 +340,7 @@ export function createWebAdmin({ client, origin, port, log, logError, closeTicke
     server.requestTimeout = 15_000;
     server.headersTimeout = 10_000;
     server.on('error', logError);
-    server.listen(port, '0.0.0.0', () => console.log(`Panel WWW gotowy na porcie ${port}. Dostęp: właściciel serwera.`));
+    server.listen(port, '0.0.0.0', () => console.log(`Panel WWW gotowy na porcie ${port}. Dostęp: rola ${panelRoleId}.`));
     return server;
   }
 
