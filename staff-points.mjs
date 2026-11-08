@@ -52,11 +52,17 @@ export async function giveStaffPoint(interaction, actor, state, logError) {
       privateModerationChannel(guild, state, { name: 'staff-records' }),
     ]);
     const staffRoles = staff.map((name) => target?.roles.cache.get(state.roles[name])).filter(Boolean);
-    if (!target || target.user.bot || !staffRoles.length) throw new SetupError('Ta osoba nie ma rangi ekipy.');
-    if (!target.manageable) throw new SetupError('Hierarchia ról Discorda blokuje zmianę tej osobie.');
+    const demo = target?.user.bot && id === guild.client.user.id;
+    if (target?.user.bot && !demo) throw new SetupError('Punkty są przeznaczone dla osób z ekipy. Próbę wykonasz na bocie Po Godzinach.');
+    if (!demo && !staffRoles.length) throw new SetupError('Ta osoba nie ma rangi ekipy.');
+    if (!demo && !target.manageable) throw new SetupError('Hierarchia ról Discorda blokuje zmianę tej osobie.');
     const marks = levels(kind).map((number) => roles.get(state.roles[key(kind, number)]));
     if (!marks.every((role) => role?.editable && !role.managed && role.permissions.bitfield === 0n)) {
       throw new SetupError('Rangi punktów wymagają sprawdzenia przez właściciela.');
+    }
+    if (demo) {
+      const consequence = kind === 'minus' ? '\nPrzy prawdziwym 3/3 bot zdejmuje najwyższą rangę ekipy, którą może zdjąć.' : '';
+      return `🧪 **Próba /${kind}** · nadano by rangę **${marks[0].name}**.\nPowód: ${escapeMarkdown(note)}\nPrawdziwy wpis trafia do <#${channel.id}>.${consequence}`;
     }
     const current = marks.findLastIndex(({ id: roleId }) => target.roles.cache.has(roleId)) + 1;
     const limit = limits[kind];
