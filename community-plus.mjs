@@ -13,6 +13,10 @@ const ns = 'community:plus:';
 const noMentions = { parse: [] };
 const why = 'Rozbudowa społeczności Po Godzinach';
 const day = 86_400_000;
+const banHistorySeconds = 3 * 86400;
+const banTitle = '⛔ NIE PISZ NA TYM KANALE';
+const banTopic = 'NIE PISZ TUTAJ. Każda wiadomość = natychmiastowy bezterminowy ban na Po Godzinach i usunięcie wiadomości z ostatnich 3 dni.';
+const banWarning = 'Jeśli wyślesz tutaj jakąkolwiek wiadomość, bot od razu nałoży na Ciebie **bezterminowego bana na serwerze Po Godzinach**.\n\nDiscord usunie też Twoje wiadomości z ostatnich **3 dni** na tym serwerze.';
 const levelRoles = [[5, '🌱│Poziom 5'], [10, '✨│Poziom 10'], [20, '🔥│Poziom 20'], [40, '🏆│Poziom 40']];
 const groups = [
   ['═════ 🔐 WERYFIKACJA ═════', ['verified', 'review', 'blocked']],
@@ -91,6 +95,7 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
   const creating = new Set();
   const removing = new Set();
   const warnings = new Map();
+  let banActivatedAt = 0;
   const ready = (guild) => guild?.id === guildId && progress;
   const on = (event, task) => client.on(event, (...args) => Promise.resolve(task(...args)).catch(logError));
   const access = (state, guild, mode) => {
@@ -199,7 +204,6 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
       topic: 'Wiadomość w tym kanale powoduje ostrzeżenie i wpis do prywatnych logów.',
     });
     if (warning.position !== 0) await warning.setPosition(0, { reason: why });
-    await panel(warning, journal, 'plus-warning', card('⚠️ Kanał ostrzegawczy', 'Wpis powoduje ostrzeżenie i zapis w prywatnym dzienniku moderacji.'));
     await panel(count, journal, 'plus-count', card('🔢 Liczymy razem', 'Kliknij **Podaj liczbę** i wpisz następną. Kolejne ruchy muszą być od różnych osób.'),
       [row(button('count', 'Podaj liczbę', ButtonStyle.Primary), button('count-state', 'Sprawdź wynik'))]);
     await panel(games, journal, 'plus-games', card('🪙 Gry i monety', 'Waluta jest wirtualna. Odbieraj bonus, graj w 21 i sprawdzaj swój poziom. Pojedynki o monety działają między chętnymi graczami.'),
@@ -251,6 +255,23 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
             parent: parent.id, permissionOverwrites: overwrites });
         }
         console.log('Szczegółowe kanały logów gotowe.');
+      },
+      async () => {
+        const role = await guild.roles.fetch(state.roles.mod);
+        const bot = await guild.members.fetchMe();
+        let logs = await privateModerationChannel(guild, state, { name: 'log-bany' });
+        if (!bot.permissions.has('BanMembers') || !role) throw new SetupError('Kanał bana wymaga uprawnienia BanMembers i rangi Moderator.');
+        if (!role.mentionable && !logs.permissionsFor(bot)?.has('MentionEveryone')) {
+          await logs.permissionOverwrites.edit(bot, { MentionEveryone: true }, { reason: 'Alerty o banach dla Moderatorów' });
+          logs = await privateModerationChannel(guild, state, { name: 'log-bany' });
+        }
+        if (!role.mentionable && !logs.permissionsFor(bot)?.has('MentionEveryone')) {
+          throw new SetupError('Bot nie może oznaczać Moderatorów w prywatnym logu banów.');
+        }
+        if (warning.topic !== banTopic) await warning.setTopic(banTopic, 'Wyraźne ostrzeżenie przed automatycznym banem');
+        await panel(warning, journal, 'plus-warning', card(banTitle, banWarning));
+        banActivatedAt = Date.now();
+        console.log(`Automatyczny ban aktywny w ${warning.id}; historia: 3 dni; alert Moderatorów w ${logs.id}.`);
       },
     ];
     for (const task of tasks) await task().catch(logError);
@@ -310,12 +331,30 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
     const state = getState();
     const now = Date.now();
     if (channelId === state.channels['plus-warning']) {
-      if (now - (warnings.get(author.id) ?? 0) < 60_000) return;
+      if (!banActivatedAt || message.createdTimestamp < banActivatedAt || message.webhookId ||
+        now - (warnings.get(author.id) ?? 0) < 60_000) return;
       warnings.set(author.id, now);
-      await security.log(guild, 'log-moderacja', '⚠️ Ostrzeżenie z kanału',
-        `Osoba: **${name(author)}**\nKanał: <#${channelId}>\nPowód: wiadomość w kanale ostrzegawczym.`);
-      await author.send({ content: '⚠️ Ostrzeżenie na Po Godzinach. Wysłano wiadomość w kanale ostrzegawczym.', allowedMentions: noMentions })
-        .catch(() => message.reply({ content: '⚠️ Ostrzeżenie. Wiadomość w tym kanale została odnotowana.', allowedMentions: noMentions }).catch(logError));
+      setTimeout(() => warnings.delete(author.id), 60_000).unref();
+      const warning = await guild.channels.fetch(channelId, { force: true });
+      if (warning?.topic !== banTopic) return;
+      const notice = await warning.messages.fetch({ message: state.messages['plus-warning'], force: true });
+      if (notice.author.id !== client.user.id || !notice.embeds.some(({ title, description }) =>
+        title === banTitle && description === banWarning)) return;
+      const logs = await privateModerationChannel(guild, state, { name: 'log-bany' });
+      const role = await guild.roles.fetch(state.roles.mod);
+      if (!role || (!role.mentionable && !logs.permissionsFor(guild.members.me)?.has('MentionEveryone'))) return;
+      let banned = false;
+      if (member.bannable) {
+        banned = await member.ban({
+          deleteMessageSeconds: banHistorySeconds, reason: 'Automatyczny ban: wiadomość w kanale ostrzegawczym (historia 3 dni)',
+        }).then(() => true).catch((error) => { logError(error); return false; });
+      }
+      await logs.send({
+        content: `<@&${role.id}>`,
+        embeds: [card(banned ? '🚨 Automatyczny ban' : '⚠️ Automatyczny ban niewykonany',
+          `Osoba: **${name(author)}**\nKanał: <#${channelId}>\nPowód: wiadomość w kanale z ostrzeżeniem.\n${banned ? 'Discord otrzymał polecenie usunięcia wiadomości z ostatnich 3 dni.' : 'Sprawdź hierarchię ról lub uprawnienia bota.'}`)],
+        allowedMentions: { parse: [], roles: [role.id] }, nonce: message.id, enforceNonce: true,
+      });
       return;
     }
     if (!security.isVerified(member) || ![state.channels.ogolny, state.channels['media-i-memy'], state.channels['plus-fun-chat'], state.channels.gaming].includes(channelId) ||
