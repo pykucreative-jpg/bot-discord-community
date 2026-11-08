@@ -18,6 +18,8 @@ const NO_MENTIONS = { parse: [] };
 const memberNoticeChannels = ['witamy', 'pozegnania'];
 const noticePermissions = ['ViewChannel', 'ReadMessageHistory', 'SendMessages', 'EmbedLinks'];
 const departureTitle = '📤 Opuszczenie serwera';
+const kickTitle = '🧾 Wyrzucono członka';
+const kickHistoryWindow = 30 * 60_000;
 const auditActions = new Map(Object.entries({
   GuildUpdate: 'Zmieniono ustawienia serwera',
   ChannelCreate: 'Utworzono kanał', ChannelUpdate: 'Zmieniono ustawienia kanału', ChannelDelete: 'Usunięto kanał',
@@ -181,6 +183,10 @@ export function createSecurity({ client, guildId, getState, logError }) {
   const rates = new Map();
   const pendingClears = new Map();
   const joins = new Map();
+  const kicksLogged = new Map();
+  const kicksFarewells = new Map();
+  const recentDepartures = new Map();
+  let checkingKicks = false;
   let raidUntil = 0;
 
   function on(event, handler) {
@@ -242,6 +248,92 @@ export function createSecurity({ client, guildId, getState, logError }) {
       `Hej <@${userId}>! Fajnie, że do nas dołączasz. Przeczytaj i zaakceptuj zasady w <#${rules}>, żeby odblokować serwer. Do zobaczenia w grze! 🎮`, 0x2CA58D);
   }
 
+  function farewellCard(user) {
+    return card('🌙 Do zobaczenia!',
+      `**${detail(user.username)}** opuścił(a) Centrum Graczy. Dzięki za wspólny czas i powodzenia w kolejnych rozgrywkach! 🎮`, 0x7767AF);
+  }
+
+  async function deliverKickLog(guild, entry, checkHistory = false) {
+    if (kicksLogged.has(entry.id)) return false;
+    kicksLogged.set(entry.id, entry.createdTimestamp);
+    try {
+      const state = getState();
+      const fallback = 'log-moderacja';
+      const destination = state.channels['log-wyrzucenia'] ? 'log-wyrzucenia' : fallback;
+      const logChannel = await privateModerationChannel(guild, state, { name: destination }).catch((error) => {
+        if (!(error instanceof SetupError) || destination === fallback) throw error;
+        console.warn('Log wyrzuceń wymaga sprawdzenia. Używam prywatnego logu moderacji.');
+        return privateModerationChannel(guild, state, { name: fallback });
+      });
+      const delegated = entry.executorId === client.user.id && /^Moderator (\d{17,20}):\s*(.*)$/s.exec(entry.reason ?? '');
+      const [executor, target] = await Promise.all([
+        auditUserName(guild, delegated ? delegated[1] : entry.executorId, delegated ? undefined : entry.executor),
+        auditTargetName(guild, entry),
+      ]);
+      const description = `Wykonawca: **${executor}**\nCel: **${target}**\nPowód: ${detail((delegated ? delegated[2] : entry.reason) || 'Nie podano')}`;
+      if (checkHistory) {
+        const history = await logChannel.messages.fetch({ limit: 100 });
+        if (history.some((message) => message.author.id === client.user.id && message.embeds.some((embed) =>
+          embed.title === kickTitle && (Date.parse(embed.timestamp) === entry.createdTimestamp ||
+            (embed.description === description && Math.abs(message.createdTimestamp - entry.createdTimestamp) < 30_000))))) return false;
+      }
+      await logChannel.send({
+        embeds: [card(kickTitle, description).setTimestamp(entry.createdTimestamp)], allowedMentions: NO_MENTIONS,
+        nonce: entry.id, enforceNonce: true,
+      });
+      return true;
+    } catch (error) {
+      kicksLogged.delete(entry.id);
+      throw error;
+    }
+  }
+
+  async function checkRecentKicks(guild, report = false) {
+    if (!active(guild) || !getState().channels['log-wyrzucenia'] || checkingKicks) return;
+    checkingKicks = true;
+    try {
+      const now = Date.now();
+      for (const recent of [kicksLogged, kicksFarewells, recentDepartures]) {
+        for (const [id, time] of recent) if (now - time >= kickHistoryWindow) recent.delete(id);
+      }
+      const audit = await guild.fetchAuditLogs({ type: AuditLogEvent.MemberKick, limit: 25 });
+      const entries = [...audit.entries.values()].reverse().filter((entry) =>
+        entry.targetId && now - entry.createdTimestamp >= 5000 && now - entry.createdTimestamp < kickHistoryWindow);
+      let logs = 0;
+      let farewells = 0;
+      for (const entry of entries) {
+        if (await deliverKickLog(guild, entry, true).catch(logError)) logs++;
+        if (kicksFarewells.has(entry.id)) continue;
+        const departure = recentDepartures.get(entry.targetId);
+        if (departure && Math.abs(departure - entry.createdTimestamp) < 30_000) {
+          kicksFarewells.set(entry.id, entry.createdTimestamp);
+          continue;
+        }
+        try {
+          const user = entry.target?.username ? entry.target : await client.users.fetch(entry.targetId);
+          if (!user.bot) {
+            const channel = await noticeChannel(guild, 'pozegnania');
+            const history = await channel.messages.fetch({ limit: 100 });
+            const embed = farewellCard(user).setTimestamp(entry.createdTimestamp);
+            if (!history.some((message) => message.author.id === client.user.id && message.embeds.some((item) =>
+              item.title === embed.data.title && item.description?.startsWith(`**${detail(user.username)}**`) &&
+              (Date.parse(item.timestamp) === entry.createdTimestamp ||
+                Math.abs(message.createdTimestamp - entry.createdTimestamp) < 30_000)))) {
+              await channel.send({ embeds: [embed], allowedMentions: NO_MENTIONS, nonce: entry.id, enforceNonce: true });
+              farewells++;
+            }
+          }
+          kicksFarewells.set(entry.id, entry.createdTimestamp);
+        } catch (error) { logError(error); }
+      }
+      if (report || logs || farewells) {
+        console.log(`Sprawdzono wyrzucenia z audytu: ${entries.length}. Uzupełniono logi: ${logs}, pożegnania: ${farewells}.`);
+      }
+    } finally {
+      checkingKicks = false;
+    }
+  }
+
   async function recoverMemberNotices(guild, welcome, farewell, from, to) {
     const inside = (timestamp) => timestamp >= from && timestamp < to;
     const noticeHistory = async (channel) => {
@@ -301,6 +393,7 @@ export function createSecurity({ client, guildId, getState, logError }) {
     if (welcome && farewell && from < to && to <= Date.now()) {
       await recoverMemberNotices(guild, welcome, farewell, from, to);
     }
+    await checkRecentKicks(guild, true);
   }
 
   async function post(guild, name, embed) {
@@ -681,9 +774,11 @@ export function createSecurity({ client, guildId, getState, logError }) {
     if (!active(member.guild)) return;
     rates.delete(member.id);
     if (!member.user.bot) {
-      const farewell = await post(member.guild, 'pozegnania', card('🌙 Do zobaczenia!',
-        `**${detail(member.user.username)}** opuścił(a) Centrum Graczy. Dzięki za wspólny czas i powodzenia w kolejnych rozgrywkach! 🎮`, 0x7767AF));
-      if (farewell) console.log('Wysłano automatyczne pożegnanie w kanale pozegnania.');
+      const farewell = await post(member.guild, 'pozegnania', farewellCard(member.user));
+      if (farewell) {
+        recentDepartures.set(member.id, Date.now());
+        console.log('Wysłano automatyczne pożegnanie w kanale pozegnania.');
+      }
     }
     await log(member.guild, 'logi-bota', departureTitle, label(member.user));
   });
@@ -760,6 +855,10 @@ export function createSecurity({ client, guildId, getState, logError }) {
   on(Events.GuildAuditLogEntryCreate, async (entry, guild) => {
     const action = auditActions.get(entry.action);
     if (!active(guild) || !action) return;
+    if (entry.action === AuditLogEvent.MemberKick && getState().channels['log-wyrzucenia']) {
+      await deliverKickLog(guild, entry);
+      return;
+    }
     if (entry.reason === 'Aktualizacja licznika serwera') return;
     const delegated = entry.executorId === guild.client.user.id && /^Moderator (\d{17,20}):\s*(.*)$/s.exec(entry.reason ?? '');
     const [executor, target] = await Promise.all([
@@ -797,6 +896,10 @@ export function createSecurity({ client, guildId, getState, logError }) {
     const now = Date.now();
     for (const [user, history] of rates) if (now - history.at(-1) > 8_000) rates.delete(user);
     for (const [user, preview] of pendingClears) if (now >= preview.expires) pendingClears.delete(user);
+  }, 30_000).unref();
+  setInterval(() => {
+    const guild = client.guilds.cache.get(guildId);
+    checkRecentKicks(guild).catch(logError);
   }, 30_000).unref();
   setInterval(() => {
     const guild = client.guilds.cache.get(guildId);
