@@ -8,6 +8,7 @@ import { cleanupCommand, createCleanup } from './cleanup.mjs';
 import { controls, manualRoles, moderationButtons, panelModal, verificationButton } from './panels.mjs';
 import { boostSystemSettings, createSecurity, securityCommands } from './security.mjs';
 import { createTickets } from './tickets.mjs';
+import { createMusic } from './music.mjs';
 import {
   applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installProtection, loadState,
   SetupError, styleManagedRoles, withSetupLock,
@@ -84,6 +85,7 @@ let journal = await loadState(guildId);
 const cleanup = createCleanup();
 const security = createSecurity({ client, guildId, getState: () => journal.state, logError });
 const tickets = createTickets({ getState: () => journal.state, log: security.log, logError });
+const music = process.env.DISCORD_MUSIC === 'true' ? createMusic({ client, logError }) : undefined;
 const changingRoles = new Set();
 let building = false;
 let startupSummary = 'Bot uruchamia konfigurację.';
@@ -425,6 +427,7 @@ async function useControl(interaction, action, key, id) {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.inCachedGuild() || interaction.guildId !== guildId) return;
+  if (music && await music.handle(interaction)) return;
   const panel = interaction.isStringSelectMenu() && interaction.customId.startsWith(menuPrefix);
   const verifying = interaction.isButton() && interaction.customId === verificationButton;
   const control = (interaction.isButton() || interaction.isStringSelectMenu() ||
@@ -529,6 +532,10 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error(startupSummary);
   }
   await security.prepareMemberNotices(guild).catch(logError);
+  if (music) await withConfiguration(() => music.setup(guild, journal)).catch((error) => {
+    if (error instanceof SetupError) console.warn(error.message);
+    else logError(error);
+  });
 });
 
 try {

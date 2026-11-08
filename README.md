@@ -102,4 +102,10 @@ Przechowuj folder **data** z identyfikatorami utworzonych elementów. Uruchamiaj
 
 Przy aktualizacji wcześniejszej paczki zachowaj folder data. Bot przeniesie kanały szukania ekipy i wydarzeń do kategorii gier, a 📋│mod-log przemianuje na 🛡️│modzi, zachowując historię. Nowe alerty kieruje do 🚨│ochrona. Wycofane kanały i kategorie pojawią się na liście do usunięcia. Jeśli bot wykryje dodatkowe reguły dostępu w aktualizowanym kanale, zatrzyma podgląd do czasu sprawdzenia ich przez właściciela. Nowy układ tworzy weryfikację bota niezależnie od wbudowanego Onboardingu Discorda, który wymaga kanałów pozwalających @everyone pisać. Sam tryb [Discord Community](https://support.discord.com/hc/en-us/articles/360047132851-Enabling-Your-Community-Server) można włączyć w ustawieniach Discorda z 📜│regulamin i 🛡️│modzi jako kanałem aktualizacji. Zostaw kanał modów prywatny.
 
+## Muzyka
+
+Ustaw `DISCORD_MUSIC=true`, żeby bot dodał 🎵│muzyka w kategorii głosowej. Panel pojawi się w czacie tego kanału. Dołącz do głosowego, wybierz **Wklej link** i podaj adres pojedynczego utworu z YouTube, Spotify albo Audius. Bot wyszukuje dostępne nagranie w Audius. Kolejka może mieć 15 oczekujących utworów, a panel pokazuje źródło odtwarzanej wersji. Bot rozłącza się po opróżnieniu kolejki lub kanału.
+
+Obraz Docker ma FFmpeg. Przy uruchamianiu poza Dockerem potrzebujesz FFmpeg dostępnego w PATH z obsługą libopus.
+
 Podgląd nazw offline uruchomisz przez **npm.cmd run plan**.

@@ -43,6 +43,8 @@ export const roleMenus = [
   { key: 'tematy', label: '🎯  Zainteresowania i powiadomienia', multiple: true },
 ];
 
+export const musicChannelKey = 'music-voice';
+
 export const categories = [
   {
     key: 'live-stats', name: 'STATYSTYKI', access: 'stats',

@@ -3,11 +3,16 @@
   "version": "4.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.17.0" },
+  "engines": {
+    "node": ">=24.17.0"
+  },
   "scripts": {
     "start": "node --env-file=.env bot.mjs",
     "plan": "node plan.mjs",
-    "check": "node --check bot.mjs && node --check setup.mjs && node --check plan.mjs && node --check role-panel.mjs && node --check security.mjs && node --check cleanup.mjs && node --check panels.mjs && node --check tickets.mjs"
+    "check": "node --check bot.mjs && node --check setup.mjs && node --check plan.mjs && node --check role-panel.mjs && node --check security.mjs && node --check cleanup.mjs && node --check panels.mjs && node --check tickets.mjs && node --check music.mjs"
   },
-  "dependencies": { "discord.js": "14.26.0" }
+  "dependencies": {
+    "@discordjs/voice": "0.19.2",
+    "discord.js": "14.26.0"
+  }
 }
