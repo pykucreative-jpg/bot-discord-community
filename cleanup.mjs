@@ -30,6 +30,10 @@ export function createCleanup() {
       state.channels[musicChannelKey],
       state.channels[musicPanelKey],
       guild.afkChannelId,
+      state.categories['ticket-help'],
+      state.categories['ticket-active'],
+      state.channels['ticket-admin'],
+      state.channels['log-archiwum-ticketow'],
       ...Object.entries(state.categories).filter(([key]) => key.startsWith('plus-')).map(([, id]) => id),
       ...Object.entries(state.channels).filter(([key]) => key.startsWith('plus-') || Object.hasOwn(plusLogs, key)).map(([, id]) => id),
     ]);

@@ -3,7 +3,7 @@ import {
   AuditLogEvent, ChannelType, EmbedBuilder, Events, GuildAuditLogsEntry, MessageType, PermissionFlagsBits,
   SlashCommandBuilder, SystemChannelFlagsBitField, escapeMarkdown,
 } from 'discord.js';
-import { channelLabel, musicChannelKey, musicPanelKey } from './plan.mjs';
+import { channelLabel, musicChannelKey, musicPanelKey, verificationSeparators } from './plan.mjs';
 import { confirmMessageClear, reviewButtons } from './panels.mjs';
 import { lockTicketChannel } from './tickets.mjs';
 import {
@@ -416,7 +416,10 @@ export function createSecurity({ client, guildId, getState, logError }) {
       const gate = await gateRoles(guild);
       const has = (role) => member.roles.cache.has(role.id);
       if (has(gate.blocked)) throw new SetupError('Twoja weryfikacja została wstrzymana. Skontaktuj się z moderacją.');
-      if (has(gate.verified)) return 'Masz już dostęp do społeczności.';
+      if (has(gate.verified)) {
+        await syncVerificationSeparators(member, true, 'Uzupełnienie separatorów po weryfikacji');
+        return 'Masz już dostęp do społeczności.';
+      }
       if (has(gate.review)) return 'Twoje zgłoszenie czeka na decyzję moderacji.';
       const accountIsNew = Date.now() - member.user.createdTimestamp < newAccountAge;
       const raidActive = Date.now() < raidUntil;
@@ -437,9 +440,23 @@ export function createSecurity({ client, guildId, getState, logError }) {
         return 'Regulamin przyjęty. Moderacja sprawdzi Twoje zgłoszenie przed odblokowaniem dostępu.';
       }
       await member.roles.add(gate.verified.id, 'Akceptacja regulaminu');
+      await syncVerificationSeparators(member, true, 'Separatory po weryfikacji');
       await log(guild, 'log-moderacja', '✅ Weryfikacja zakończona', label(member.user));
       return 'Gotowe! Masz rolę **Zweryfikowany**. Odblokowano kanały społeczności.';
     });
+  }
+
+  async function syncVerificationSeparators(member, add, reason) {
+    const state = getState();
+    const staff = member.guild?.roles.cache?.get(state.roles['plus-separator-5']);
+    if (!staff) return;
+    for (const [key, title] of verificationSeparators) {
+      const role = member.guild.roles.cache.get(state.roles[key]);
+      if (!role?.editable || role.name !== title || member.roles.cache.has(role.id) === add) continue;
+      if (add && (role.comparePositionTo(staff) >= 0 || role.permissions.bitfield !== 0n || role.hoist || role.mentionable ||
+        member.guild.channels.cache.some((channel) => (channel.permissionOverwrites?.cache.get(role.id)?.allow.bitfield ?? 0n) !== 0n))) continue;
+      await (add ? member.roles.add(role.id, reason) : member.roles.remove(role.id, reason)).catch(logError);
+    }
   }
 
   function requirePermission(member, permission) {
@@ -482,10 +499,12 @@ export function createSecurity({ client, guildId, getState, logError }) {
           throw new SetupError('Zatwierdzić można osobę, która zaakceptowała regulamin i oczekuje na decyzję.');
         }
         await member.roles.add(gate.verified.id, note);
+        await syncVerificationSeparators(member, true, note);
         await member.roles.remove(gate.review.id, note);
       } else if (action === 'wstrzymaj') {
         await member.roles.add(gate.blocked.id, note);
         await member.roles.remove(gate.verified.id, note);
+        await syncVerificationSeparators(member, false, note);
         await member.roles.remove(gate.review.id, note);
       } else {
         await member.roles.remove(gate.blocked.id, note);

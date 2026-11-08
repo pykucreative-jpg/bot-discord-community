@@ -45,6 +45,15 @@ export const roleMenus = [
 
 export const musicChannelKey = 'music-voice';
 export const musicPanelKey = 'music-panel';
+export const verificationSeparators = [
+  ['plus-separator-0', '═════ 🔐 WERYFIKACJA ═════'],
+  ['plus-separator-1', '═════ 👤 TOŻSAMOŚĆ ═════'],
+  ['plus-separator-2', '═════ 🎂 WIEK ═════'],
+  ['plus-separator-3', '═════ 🎮 ZAINTERESOWANIA ═════'],
+  ['plus-separator-4', '═════ 💎 WYRÓŻNIENIA ═════'],
+  ['plus-separator-6', '═════ 🤝 PARTNERZY ═════'],
+  ['plus-separator-levels', '═════ 🏅 POZIOMY ═════'],
+];
 export const plusLogs = {
   'log-wejscia': '📥│wejścia', 'log-wyjscia': '📤│wyjścia', 'log-bany': '🔨│bany',
   'log-wyrzucenia': '👢│wyrzucenia', 'log-nadane-role': '➕│nadane-role',

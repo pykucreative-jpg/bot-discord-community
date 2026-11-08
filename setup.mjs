@@ -563,11 +563,13 @@ export async function privateModerationChannel(guild, state, { force = true, nam
   const channel = await guild.channels.fetch(id, { force });
   const item = channelEntries.find(({ channel }) => channel.name === name);
   const extraLog = Object.hasOwn(plusLogs, name);
-  const access = extraLog ? 'logs' : item?.channel.access ?? item?.category.access;
+  const ticketArchive = name === 'log-archiwum-ticketow';
+  const access = extraLog || ticketArchive ? 'logs' : item?.channel.access ?? item?.category.access;
   const expected = overwrites(guild, state, access);
+  if (ticketArchive) expected.find(({ id }) => id === guild.client.user.id).allow.push('AttachFiles');
   const actual = channel?.permissionOverwrites?.cache;
   if (!['logs', 'mods'].includes(access) || channel?.type !== ChannelType.GuildText ||
-      channel.parentId !== state.categories[extraLog ? 'bot-logs' : item.category.key] ||
+      channel.parentId !== state.categories[ticketArchive ? 'ticket-help' : extraLog ? 'bot-logs' : item.category.key] ||
       !matchesOverwrites(actual, expected)) {
     throw new SetupError('Prywatny kanał modów wymaga sprawdzenia uprawnień przez administrację.');
   }

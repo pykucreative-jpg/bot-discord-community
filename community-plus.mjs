@@ -21,6 +21,7 @@ const groups = [
   ['═════ 🎮 ZAINTERESOWANIA ═════', ['events', 'tech', 'music', 'gaming']],
   ['═════ 💎 WYRÓŻNIENIA ═════', ['vip', 'member']],
   ['═════ 🛡️ EKIPA ═════', ['admin', 'mod', 'helper', 'organizer']],
+  ['═════ 🤝 PARTNERZY ═════', []],
 ];
 const isVoice = (channel) => channel?.type === ChannelType.GuildVoice;
 const level = (xp) => Math.floor(Math.sqrt(xp / 100));
@@ -430,7 +431,11 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
         }
         const id = interaction.user.id;
         if (action === 'verify') {
-          if (security.isVerified(interaction.member)) throw new SetupError('Masz już dostęp do społeczności.');
+          if (security.isVerified(interaction.member)) {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            await reply({ content: await security.accept(interaction) });
+            return true;
+          }
           const now = Date.now();
           for (const [user, challenge] of challenges) if (challenge.expires <= now) challenges.delete(user);
           const code = String(randomInt(10000, 100000));

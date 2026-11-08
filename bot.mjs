@@ -87,7 +87,8 @@ const client = new Client({
 let journal = await loadState(guildId);
 const cleanup = createCleanup();
 const security = createSecurity({ client, guildId, getState: () => journal.state, logError });
-const tickets = createTickets({ getState: () => journal.state, log: security.log, logError });
+const tickets = createTickets({ getState: () => journal.state, log: security.log, logError,
+  archiveEnabled: process.env.DISCORD_COMMUNITY_PLUS === 'true' });
 const music = process.env.DISCORD_MUSIC === 'true' ? createMusic({ client, getState: () => journal.state, logError }) : undefined;
 const jockie = process.env.DISCORD_JOCKIE_PANEL === 'true' ? createJockiePanel({ client, logError }) : undefined;
 const communityPlus = process.env.DISCORD_COMMUNITY_PLUS === 'true'
@@ -551,6 +552,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     else logError(error);
   });
   if (communityPlus) await withConfiguration(() => communityPlus.setup(guild, journal)).catch(logError);
+  if (communityPlus) await withConfiguration(() => tickets.setup(guild, journal)).catch(logError);
 });
 
 try {
