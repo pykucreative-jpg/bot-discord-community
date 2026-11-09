@@ -44,7 +44,7 @@ if (process.env.RAILWAY_PROJECT_ID && !process.env.RAILWAY_VOLUME_MOUNT_PATH) {
   process.exit(1);
 }
 
-const interestRoles = roles.filter((role) => role.group === 'tematy');
+const interestRoles = roles.filter((role) => ['tematy', 'tozsamosc', 'ping'].includes(role.group));
 const ownerCommand = (name, description) => new SlashCommandBuilder()
   .setName(name).setDescription(description).setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
@@ -86,8 +86,8 @@ const commands = [
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildModeration, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.AutoModerationExecution],
-  partials: [Partials.Message, Partials.GuildMember, Partials.User],
+    GatewayIntentBits.AutoModerationExecution, GatewayIntentBits.GuildMessageReactions],
+  partials: [Partials.Message, Partials.GuildMember, Partials.User, Partials.Reaction],
 });
 let journal = await loadState(guildId);
 const cleanup = createCleanup();
@@ -318,10 +318,10 @@ async function usePanel(interaction, member) {
   if (!group) throw new SetupError('To menu wyboru ról jest nieaktualne.');
   const definitions = roles.filter((role) => role.group === group.key);
   const values = interaction.values;
-  const clear = values.length === 1 && values[0] === clearRole;
+  const clear = values.length === 1 && values[0] === clearRole || group.allowClear && values.length === 0;
   if (!clear && (!values.length || (!group.multiple && values.length !== 1) ||
       !values.every((value) => definitions.some(({ key }) => key === value)))) {
-    throw new SetupError('Wybierz role z listy albo samą opcję Bez roli.');
+    throw new SetupError('Wybierz role z aktualnej listy.');
   }
 
   const choices = await safeRoles(interaction.guild, definitions);
@@ -619,7 +619,6 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.log('Punkty administracji: przygotowano 5 rang plusów i 3 rangi minusów.');
   }).catch(logError);
   await security.prepareBoostThanks(guild).catch(logError);
-  await refreshRoleMenu(guild, journal.state).catch(logError);
   if (music) await withConfiguration(() => music.setup(guild, journal)).catch((error) => {
     if (error instanceof SetupError) console.warn(error.message);
     else logError(error);
@@ -630,6 +629,14 @@ client.once(Events.ClientReady, async (readyClient) => {
     else logError(error);
   });
   if (communityPlus) await withConfiguration(() => communityPlus.setup(guild, journal)).catch(logError);
+  await withConfiguration(async () => {
+    const { state } = journal;
+    if (!state.channels['wybierz-role'] || !roles.filter(({ group }) => ['tozsamosc', 'ping'].includes(group))
+      .every(({ key }) => state.roles[key])) return;
+    await syncStarterMessages(guild, journal, ['wybierz-role']);
+    await refreshRoleMenu(guild, state);
+    console.log(`Panel wyboru ról gotowy: kanał ${state.channels['wybierz-role']}, karta ${state.messages['wybierz-role']}.`);
+  }).catch(logError);
   await withConfiguration(() => installInviteProtection(guild, journal.state)).then((rule) => {
     inviteProtectionId = rule.id;
     console.log(`Blokada obcych zaproszeń aktywna: reguła ${rule.id}, wyciszenie 10 minut, alerty w ochronie.`);

@@ -455,7 +455,7 @@ export async function syncStarterMessages(guild, { state, save }, names = Object
   let messages = 0;
   for (const name of names) {
     const render = starterMessages[name];
-    const version = name === 'regulamin' ? 8 : messageVersion;
+    const version = ['regulamin', 'wybierz-role'].includes(name) ? 8 : messageVersion;
     const needsUpdate = state.messageLayout[name] !== version;
     const channel = await guild.channels.fetch(state.channels[name], { force: true });
     let saved;

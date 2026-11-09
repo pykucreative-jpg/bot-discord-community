@@ -11,7 +11,7 @@ export function makeRolePanel() {
     const menu = new StringSelectMenuBuilder()
       .setCustomId(menuPrefix + group.key)
       .setPlaceholder(group.label)
-      .setMinValues(1)
+      .setMinValues(group.allowClear ? 0 : 1)
       .setMaxValues(group.multiple ? options.length : 1)
       .addOptions(options);
     return new ActionRowBuilder().addComponents(menu);

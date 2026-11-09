@@ -6,7 +6,7 @@ import {
   ModalBuilder, OverwriteType, Routes, TextInputBuilder, TextInputStyle, UserSelectMenuBuilder, escapeMarkdown,
 } from 'discord.js';
 import { verificationButton } from './panels.mjs';
-import { plusLogs } from './plan.mjs';
+import { gamePingRoles, pingSeparator, plusLogs, roleLabel, roles } from './plan.mjs';
 import { isStatsChannel, privateModerationChannel, SetupError } from './setup.mjs';
 
 const ns = 'community:plus:';
@@ -18,9 +18,10 @@ const banTitle = '⛔ NIE PISZ NA TYM KANALE';
 const banTopic = 'NIE PISZ TUTAJ. Każda wiadomość = natychmiastowy bezterminowy ban na Po Godzinach i usunięcie wiadomości z ostatnich 3 dni.';
 const banWarning = 'Jeśli wyślesz tutaj jakąkolwiek wiadomość, bot od razu nałoży na Ciebie **bezterminowego bana na serwerze Po Godzinach**.\n\nDiscord usunie też Twoje wiadomości z ostatnich **3 dni** na tym serwerze.';
 const levelRoles = [[5, '🌱│Poziom 5'], [10, '✨│Poziom 10'], [20, '🔥│Poziom 20'], [40, '🏆│Poziom 40']];
+const suggestionVotes = ['✅', '❌'];
 const groups = [
   ['═════ 🔐 WERYFIKACJA ═════', ['verified', 'review', 'blocked']],
-  ['═════ 👤 TOŻSAMOŚĆ ═════', ['nonbinary', 'man', 'woman']],
+  ['═════ 👤 TOŻSAMOŚĆ ═════', ['lgbt', 'man', 'woman']],
   ['═════ 🎂 WIEK ═════', ['age35', 'age25', 'age18', 'age13']],
   ['═════ 🎮 ZAINTERESOWANIA ═════', ['events', 'tech', 'music', 'gaming']],
   ['═════ 💎 WYRÓŻNIENIA ═════', ['vip', 'member']],
@@ -133,14 +134,71 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
     return channel;
   }
 
-  async function ensureRole(guild, journal, key, title) {
+  async function ensureRole(guild, journal, key, title, plainName) {
     const { state, save } = journal;
-    const existing = guild.roles.cache.get(state.roles[key]) ?? guild.roles.cache.find((role) => role.name === title &&
-      !role.managed && role.permissions.bitfield === 0n && role.members.size === 0);
+    const matching = guild.roles.cache.filter((role) => role.name === title || plainName && role.name.toLowerCase() === plainName.toLowerCase());
+    const saved = guild.roles.cache.get(state.roles[key]);
+    if (plainName && !saved && matching.size > 1) throw new SetupError(`Sprawdź powtórzone role „${plainName}”.`);
+    const existing = saved ?? matching.find((role) => !role.managed && role.permissions.bitfield === 0n && (plainName || role.members.size === 0));
+    if (plainName && !existing && matching.size) throw new SetupError(`Sprawdź uprawnienia roli „${plainName}”.`);
     const role = existing ?? await guild.roles.create({ name: title, permissions: [], reason: why });
     if (!role.editable || role.permissions.bitfield !== 0n) throw new SetupError(`Sprawdź rolę ${title}.`);
     if (state.roles[key] !== role.id) { state.roles[key] = role.id; await save(); }
     return role;
+  }
+
+  async function setupGameRoles(guild, journal) {
+    const { state, save } = journal;
+    await guild.roles.fetch();
+    const identity = roles.find(({ key }) => key === 'lgbt');
+    const lgbt = await ensureRole(guild, journal, identity.key, roleLabel(identity), identity.name);
+    const gameRoles = [];
+    for (const role of gamePingRoles) gameRoles.push(await ensureRole(guild, journal, role.key, roleLabel(role), role.name));
+    const marker = await ensureRole(guild, journal, 'plus-separator-ping', pingSeparator);
+    const current = await guild.roles.fetch();
+    const ordered = [...gameRoles.toReversed(), marker].map(({ id }) => current.get(id));
+    const bottom = Math.min(...ordered.map(({ position }) => position));
+    if (ordered.some((role, index) => role.position !== bottom + index)) {
+      await guild.roles.setPositions(ordered.map(({ id }, index) => ({ role: id, position: bottom + index })));
+    }
+    if (state.roles.nonbinary) {
+      const previous = current.get(state.roles.nonbinary);
+      if (previous && (previous.id === lgbt.id || !previous.editable || !['Osoba niebinarna', '「🌈」Osoba niebinarna'].includes(previous.name))) {
+        throw new SetupError('Sprawdź zapisaną rolę „Osoba niebinarna” przed jej usunięciem.');
+      }
+      if (previous) await previous.delete('Zastąpienie starej roli opcjonalnym wyborem LGBT+');
+      delete state.roles.nonbinary;
+      await save();
+    }
+    console.log(`Role wyboru gotowe: LGBT+ ${lgbt.id}, separator PING ${marker.id}, gry ${gameRoles.length}.`);
+  }
+
+  async function setupSuggestions(guild, journal, all) {
+    const { state, save } = journal;
+    const matches = all.filter((channel) => channel?.type === ChannelType.GuildText &&
+      /(?:^|[^\p{L}\p{N}])propozycje$/iu.test(channel.name.trim()));
+    const saved = all.get(state.channels.propozycje);
+    if (!saved && matches.size > 1) throw new SetupError('Znaleziono kilka kanałów „propozycje”.');
+    if (!saved && !matches.size && !state.categories.community) throw new SetupError('Brakuje kategorii Społeczność.');
+    const channel = saved ?? matches.first() ?? await guild.channels.create({
+      name: '💡│propozycje', type: ChannelType.GuildText, parent: state.categories.community,
+      topic: 'Dodaj propozycję. Głosuj ✅ lub ❌.', permissionOverwrites: access(state, guild, 'write'), reason: why,
+    });
+    if (channel.type !== ChannelType.GuildText) throw new SetupError('Kanał propozycji musi być tekstowy.');
+    const bot = await guild.members.fetchMe();
+    if (!channel.permissionsFor(bot)?.has(['ViewChannel', 'ReadMessageHistory', 'AddReactions', 'ManageMessages'])) {
+      await channel.permissionOverwrites.edit(bot, { ViewChannel: true, ReadMessageHistory: true, AddReactions: true, ManageMessages: true }, { reason: why });
+    }
+    for (const overwrite of channel.permissionOverwrites.cache.values()) {
+      if (overwrite.id !== bot.id && overwrite.id !== guild.id && overwrite.allow.has('AddReactions', false)) {
+        await channel.permissionOverwrites.edit(overwrite.id, { AddReactions: null }, { type: overwrite.type, reason: why });
+      }
+    }
+    if (!channel.permissionOverwrites.cache.get(guild.id)?.deny.has('AddReactions', false)) {
+      await channel.permissionOverwrites.edit(guild.id, { AddReactions: false }, { reason: why });
+    }
+    if (state.channels.propozycje !== channel.id) { state.channels.propozycje = channel.id; await save(); }
+    console.log(`Głosowanie w propozycjach gotowe: ${channel.id}. Reakcje ✅ i ❌.`);
   }
 
   async function panel(channel, journal, key, embed, components = []) {
@@ -219,6 +277,8 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
         button('blackjack', 'Zagraj w 21', ButtonStyle.Primary), button('pvp', 'Włącz/wyłącz pojedynki'), button('rob', 'Skok na monety'))]);
     const tasks = [
       async () => invite(guild, journal, all, ad),
+      async () => setupSuggestions(guild, journal, all),
+      async () => setupGameRoles(guild, journal),
       async () => {
         const voice = (key, label) => make(key, label, ChannelType.GuildVoice, 'voice', rooms.id);
         const oldAfk = all.get(guild.afkChannelId);
@@ -358,6 +418,10 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
     const { guild, member, author, channelId } = message;
     if (!ready(guild) || !human(member) || message.system) return;
     const state = getState();
+    if (channelId === state.channels.propozycje) {
+      for (const vote of suggestionVotes) await message.react(vote);
+      return;
+    }
     const now = Date.now();
     if (channelId === state.channels['plus-warning']) {
       if (!banActivatedAt || message.createdTimestamp < banActivatedAt || message.webhookId ||
@@ -394,6 +458,13 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
       return user.xp;
     });
     await applyLevel(member, xp);
+  });
+
+  on(Events.MessageReactionAdd, async (reaction) => {
+    const { message, emoji } = reaction;
+    if (!ready(message.guild) || message.channelId !== getState().channels.propozycje ||
+        !emoji.id && suggestionVotes.includes(emoji.name?.replace(/\uFE0F/g, ''))) return;
+    await reaction.remove();
   });
 
   setInterval(async () => {

@@ -2,13 +2,18 @@ import { pathToFileURL } from 'node:url';
 
 const moderation = ['ManageMessages', 'ManageThreads', 'ModerateMembers', 'KickMembers', 'MentionEveryone'];
 export const panelRoleId = '1568431258550272087';
+export const gamePingRoles = [
+  ['fivem', 'FIVEM'], ['minecraft', 'MINECRAFT'], ['roblox', 'ROBLOX'], ['cs2', 'CS2'],
+  ['repo', 'R.E.P.O'], ['pubg', 'PUBG'], ['forest', 'THE FOREST'], ['sons', 'SONS OF THE FOREST'], ['et2', 'ET2'],
+].map(([key, name]) => ({ key: 'ping-' + key, name, group: 'ping' }));
+export const pingSeparator = '═════ 🔔 PING ═════';
 export const roles = [
   { key: 'blocked', name: 'Weryfikacja wstrzymana' },
   { key: 'review', name: 'Oczekuje na weryfikację' },
   { key: 'verified', name: 'Zweryfikowany', color: 0x2CA58D },
   { key: 'woman', name: 'Kobieta', group: 'plec', emoji: '♀️' },
   { key: 'man', name: 'Mężczyzna', group: 'plec', emoji: '♂️' },
-  { key: 'nonbinary', name: 'Osoba niebinarna', group: 'plec' },
+  { key: 'lgbt', name: 'LGBT+', group: 'tozsamosc', emoji: '🌈' },
   { key: 'age13', name: '13–17 lat', group: 'wiek' },
   { key: 'age18', name: '18–24 lata', group: 'wiek' },
   { key: 'age25', name: '25–34 lata', group: 'wiek' },
@@ -17,6 +22,7 @@ export const roles = [
   { key: 'music', name: 'Muzyka', group: 'tematy', emoji: '🎵', color: 0xB35AB3 },
   { key: 'tech', name: 'Technologia', group: 'tematy', emoji: '💻', color: 0x3498DB },
   { key: 'events', name: 'Powiadomienia o wydarzeniach', group: 'tematy', emoji: '🔔' },
+  ...gamePingRoles,
   { key: 'member', name: 'Członek', color: 0x2ECC71 },
   { key: 'vip', name: 'VIP', color: 0xE67E22 },
   { key: 'organizer', name: 'Organizator', color: 0x9B59B6, hoist: true },
@@ -30,18 +36,20 @@ export const roles = [
 
 const roleOrnaments = {
   blocked: '🔒', review: '⏳', verified: '✅',
-  woman: '♀️', man: '♂️', nonbinary: '🌈',
+  woman: '♀️', man: '♂️', lgbt: '🌈',
   age13: '🗓️', age18: '🗓️', age25: '🗓️', age35: '🗓️',
   gaming: '🎮', music: '🎵', tech: '💻', events: '🔔',
   member: '👥', vip: '💎', organizer: '🎯', helper: '🛟', mod: '🛡️', admin: '👑',
 };
 
-export const roleLabel = (role) => `「${roleOrnaments[role.key]}」${role.name}`;
+export const roleLabel = (role) => `「${roleOrnaments[role.key] ?? '🎮'}」${role.name}`;
 
 export const roleMenus = [
   { key: 'plec', label: '👤  Płeć (opcjonalnie)', multiple: false },
+  { key: 'tozsamosc', label: '🌈  LGBT+ (opcjonalnie)', multiple: false, allowClear: true },
   { key: 'wiek', label: '🗓️  Przedział wiekowy (opcjonalnie)', multiple: false },
   { key: 'tematy', label: '🎯  Zainteresowania i powiadomienia', multiple: true },
+  { key: 'ping', label: '🔔  Pingi o grach (opcjonalnie)', multiple: true, allowClear: true },
 ];
 
 export const musicChannelKey = 'music-voice';
@@ -52,7 +60,6 @@ export const verificationSeparators = [
   ['plus-separator-2', '═════ 🎂 WIEK ═════'],
   ['plus-separator-3', '═════ 🎮 ZAINTERESOWANIA ═════'],
   ['plus-separator-4', '═════ 💎 WYRÓŻNIENIA ═════'],
-  ['plus-separator-6', '═════ 🤝 PARTNERZY ═════'],
   ['plus-separator-levels', '═════ 🏅 POZIOMY ═════'],
 ];
 export const plusLogs = {
@@ -187,7 +194,7 @@ export const starterMessages = {
   'wybierz-role': () => [
     '🎭 Wybierz swoje role',
     'Wybierz płeć, przedział wiekowy lub zainteresowania z menu poniżej.',
-    'Płeć i wiek są dobrowolne. Każdą z tych ról możesz zdjąć opcją **Bez roli**.',
+    'Płeć, wiek i LGBT+ wybierasz dobrowolnie. W menu **Pingi o grach** zaznacz gry, o których chcesz dostawać powiadomienia.',
     'Role widać na profilu serwerowym. Podawaj tylko informacje, którymi chcesz się dzielić.',
     'W ostatnim menu wybierz wszystkie zainteresowania, które chcesz zachować, albo wybierz samo **Bez roli**.',
   ].join('\n'),
