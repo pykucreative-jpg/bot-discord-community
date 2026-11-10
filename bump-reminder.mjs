@@ -2,9 +2,10 @@ import { ChannelType, EmbedBuilder, Events } from 'discord.js';
 import { SetupError } from './setup.mjs';
 
 const disboardId = '302050872383242240';
+const recipientId = '1087775202395566232';
 const hour = 60 * 60_000;
 const footer = 'Po Godzinach · Bump';
-const permissions = ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'EmbedLinks', 'MentionEveryone'];
+const permissions = ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'EmbedLinks'];
 
 function successfulBump(message) {
   return message.author?.id === disboardId && [
@@ -47,7 +48,7 @@ export function createBumpReminder({ client, getProgress, logError }) {
       });
       channel = selected;
       const { lastBump } = progress.read().bump;
-      console.log(`Przypomnienia DISBOARD gotowe: kanał ${channel.id}, ostatni potwierdzony bump: ${lastBump ? new Date(lastBump).toISOString() : 'brak'}.`);
+      console.log(`Przypomnienia DISBOARD gotowe: kanał ${channel.id}, odbiorca ${recipientId}, ostatni potwierdzony bump: ${lastBump ? new Date(lastBump).toISOString() : 'brak'}.`);
     });
   }
 
@@ -73,11 +74,11 @@ export function createBumpReminder({ client, getProgress, logError }) {
       if (Date.now() < due) return;
       const last = lastBump ? `\nOstatni udany bump: <t:${Math.floor(lastBump / 1000)}:R>.` : '';
       const sent = await channel.send({
-        content: '@everyone',
+        content: `<@${recipientId}>`,
         embeds: [new EmbedBuilder().setColor(0x8B74FF).setTitle('🚀 Czas na bump!')
           .setDescription(`Użyj **/bump** aplikacji **DISBOARD** na tym kanale, żeby podbić Po Godzinach.${last}`)
           .setFooter({ text: footer }).setTimestamp()],
-        allowedMentions: { parse: ['everyone'] }, nonce: String(due), enforceNonce: true,
+        allowedMentions: { parse: [], users: [recipientId] }, nonce: String(due), enforceNonce: true,
       });
       await progress.update((data) => { data.bump.lastReminder = sent.createdTimestamp; });
     }).catch(logError);
