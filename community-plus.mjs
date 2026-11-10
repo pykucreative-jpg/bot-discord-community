@@ -8,6 +8,7 @@ import {
 import { verificationButton } from './panels.mjs';
 import { gamePingRoles, pingSeparator, plusLogs, roleLabel, roles } from './plan.mjs';
 import { isStatsChannel, privateModerationChannel, SetupError } from './setup.mjs';
+import { createBumpReminder } from './bump-reminder.mjs';
 
 const ns = 'community:plus:';
 const noMentions = { parse: [] };
@@ -91,6 +92,7 @@ function showHand(cards) {
 
 export function createCommunityPlus({ client, guildId, getState, security, logError }) {
   let progress;
+  const bump = createBumpReminder({ client, getProgress: () => progress, logError });
   let liveGuild;
   const challenges = new Map();
   const creating = new Set();
@@ -277,6 +279,7 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
         button('blackjack', 'Zagraj w 21', ButtonStyle.Primary), button('pvp', 'Włącz/wyłącz pojedynki'), button('rob', 'Skok na monety'))]);
     const tasks = [
       async () => invite(guild, journal, all, ad),
+      async () => bump.setup(guild, all),
       async () => setupSuggestions(guild, journal, all),
       async () => setupGameRoles(guild, journal),
       async () => {
