@@ -147,6 +147,20 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
     return app.flags.has('GatewayMessageContent') || app.flags.has('GatewayMessageContentLimited');
   }
 
+  async function checkApplications(guild) {
+    const state = getState();
+    const channels = await guild.channels.fetch();
+    const parent = channels.get(state.categories[applicationCategory]);
+    const bot = await guild.members.fetchMe();
+    const archive = await privateModerationChannel(guild, state, { name: applicationArchive });
+    if (parent?.type !== ChannelType.GuildCategory ||
+        !parent.permissionsFor(bot)?.has(['ViewChannel', 'ManageChannels']) ||
+        !archive.permissionsFor(bot)?.has(['ViewChannel', 'SendMessages', 'AttachFiles'])) {
+      throw new SetupError('Sprawdź uprawnienia bota w kategorii podań i archiwum.');
+    }
+    console.log(`Podania sprawdzone: kategoria ${parent.id}, prywatne archiwum ${archive.id}, nieobsługiwane kanały: ${channels.filter((channel) => !channel).size}.`);
+  }
+
   function archiveMarker(id) {
     return `TICKET · ${id}`;
   }
@@ -219,6 +233,7 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
     const requestKey = `${application}:${user.id}`;
     if (opening.has(requestKey)) throw new SetupError('Twój kanał zgłoszenia jest właśnie tworzony.');
     opening.add(requestKey);
+    let step = 'pobranie kanałów';
     try {
       const channels = await guild.channels.fetch();
       const existing = channels.find((channel) => {
@@ -238,10 +253,12 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
       if (!parent || application && !await guild.roles.fetch(panelRoleId, { force: true })) {
         throw new SetupError('Podania będą dostępne po skonfigurowaniu strefy rekrutacji.');
       }
-      if (channels.filter(({ parentId }) => parentId === parent).size >= 48) {
+      if (channels.filter((channel) => channel?.parentId === parent).size >= 48) {
         throw new SetupError('Brakuje miejsca na nowy kanał zgłoszenia. Poproś moderację o pomoc.');
       }
+      step = 'sprawdzenie prywatnego archiwum';
       const logsChannel = await privateModerationChannel(guild, state, { name: application ? applicationArchive : 'log-tickety' });
+      step = 'utworzenie kanału';
       const channel = await guild.channels.create({
         name: (application ? 'podanie-' : 'zgloszenie-') + user.id.slice(-6),
         parent,
@@ -263,6 +280,10 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
       }).catch(logError);
       return application ? `Otwarto prywatne podanie: <#${channel.id}>. Odpowiedz tam na pytania.`
         : `Otwarto prywatne zgłoszenie: <#${channel.id}>. Możesz tam pisać z moderacją.`;
+    } catch (error) {
+      console.error(`Otwarcie ${application ? 'podania' : 'ticketu'}, etap: ${step}.`,
+        error.name, String(error.stack ?? '').split('\n').slice(1, 4).join('\n'));
+      throw error;
     } finally {
       opening.delete(requestKey);
     }
@@ -320,7 +341,7 @@ export function createTickets({ getState, log, logError, archiveEnabled = false 
     }
   }
 
-  return { setup, open, openApplication: (interaction) => open(interaction, '', true), close,
+  return { setup, open, openApplication: (interaction) => open(interaction, '', true), close, checkApplications,
     isTicket: (channel) => Boolean(ticketDetails(channel, getState())) };
 }
 

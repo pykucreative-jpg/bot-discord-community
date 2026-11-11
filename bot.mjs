@@ -646,6 +646,10 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.log(`Blokada obcych zaproszeń aktywna: reguła ${rule.id}, wyciszenie 10 minut, alerty w ochronie.`);
   }).catch(logError);
   if (communityPlus) await withConfiguration(() => tickets.setup(guild, journal)).catch(logError);
+  await tickets.checkApplications(guild).catch((error) => {
+    if (error instanceof SetupError) console.warn('Sprawdzenie podań:', error.message);
+    else logError(error);
+  });
 });
 
 try {
