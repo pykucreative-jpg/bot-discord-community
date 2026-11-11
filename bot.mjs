@@ -15,7 +15,7 @@ import { createWebAdmin, webLoginCommand } from './web-admin.mjs';
 import { giveStaffPoint, setupStaffPoints, staffPointCommands } from './staff-points.mjs';
 import {
   applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installInviteProtection, installProtection, loadState,
-  privateModerationChannel, restrictChannelMentions, restrictRoleMentions,
+  privateModerationChannel, repairVoiceCommunication, restrictChannelMentions, restrictRoleMentions,
   SetupError, styleManagedRoles, syncStarterMessages, withSetupLock,
 } from './setup.mjs';
 
@@ -629,6 +629,10 @@ client.once(Events.ClientReady, async (readyClient) => {
     else logError(error);
   });
   if (communityPlus) await withConfiguration(() => communityPlus.setup(guild, journal)).catch(logError);
+  await withConfiguration(() => repairVoiceCommunication(guild, journal.state)).catch((error) => {
+    if (error instanceof SetupError) console.warn('Komunikacja głosowa:', error.message);
+    else logError(error);
+  });
   await withConfiguration(async () => {
     const { state } = journal;
     if (!state.channels['wybierz-role'] || !roles.filter(({ group }) => ['tozsamosc', 'ping'].includes(group))

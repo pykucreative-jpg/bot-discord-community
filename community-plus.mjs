@@ -7,7 +7,7 @@ import {
 } from 'discord.js';
 import { verificationButton } from './panels.mjs';
 import { gamePingRoles, pingSeparator, plusLogs, roleLabel, roles } from './plan.mjs';
-import { isStatsChannel, privateModerationChannel, SetupError } from './setup.mjs';
+import { isStatsChannel, privateModerationChannel, SetupError, voicePermissions } from './setup.mjs';
 import { createBumpReminder } from './bump-reminder.mjs';
 
 const ns = 'community:plus:';
@@ -104,12 +104,12 @@ export function createCommunityPlus({ client, guildId, getState, security, logEr
   const access = (state, guild, mode) => {
     const read = ['ViewChannel', 'ReadMessageHistory', 'UseApplicationCommands'];
     const user = [...read, ...(mode === 'write' ? ['SendMessages', 'EmbedLinks'] : []),
-      ...(mode === 'voice' ? ['Connect', 'Speak'] : [])];
+      ...(mode === 'voice' ? voicePermissions : [])];
     const allow = (id, rights, type = OverwriteType.Role) => ({ id, type, allow: rights });
     return [
       { id: guild.id, type: OverwriteType.Role, deny: ['ViewChannel', 'SendMessages', 'Connect'] },
       allow(client.user.id, [...read, 'SendMessages', 'EmbedLinks',
-        ...(mode === 'voice' ? ['Connect', 'Speak'] : [])], OverwriteType.Member),
+        ...(mode === 'voice' ? voicePermissions : [])], OverwriteType.Member),
       ...[...new Set([state.roles.verified, state.roles.admin, state.roles.mod].filter(Boolean))].map((id) =>
         allow(id, id === state.roles.verified ? user : [...new Set([...user, 'SendMessages'])])),
     ];

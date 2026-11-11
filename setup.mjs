@@ -15,7 +15,8 @@ const write = ['SendMessages', 'EmbedLinks'];
 const noWrite = [...write, 'CreatePublicThreads', 'CreatePrivateThreads', 'SendMessagesInThreads'];
 const postingMask = new PermissionsBitField(noWrite).bitfield;
 const writeMask = new PermissionsBitField(write).bitfield;
-const voice = ['Connect', 'Speak'];
+export const voicePermissions = ['Connect', 'Speak', 'UseVAD', 'Stream'];
+const voice = voicePermissions;
 const statsBlocked = ['Connect', 'SendMessages'];
 const statsMask = new PermissionsBitField(statsBlocked).bitfield;
 const moderators = ['admin', 'mod'];
@@ -708,4 +709,32 @@ export async function restrictChannelMentions(channel, state) {
         { type: overwrite.type, reason: 'Ograniczenie @everyone i @here do ekipy' });
     }
   }
+}
+
+export async function repairVoiceCommunication(guild, state) {
+  const [channels, serverRoles] = await Promise.all([guild.channels.fetch(), guild.roles.fetch()]);
+  const participants = ['verified', ...communityStaff].map((key) => serverRoles.get(state.roles[key])).filter(Boolean);
+  const targets = channels.filter((channel) => channel && !isStatsChannel(state, channel.id) &&
+    channel.id !== guild.afkChannelId && channel.id !== state.channels['plus-afk'] &&
+    (channel.type === ChannelType.GuildVoice ||
+      channel.type === ChannelType.GuildCategory && [state.categories.voice, state.categories['plus-rooms']].includes(channel.id)));
+  let changed = 0;
+  for (const channel of targets.values()) {
+    const affected = [];
+    for (const role of participants) {
+      const permissions = channel.permissionsFor(role);
+      if (!permissions?.has(['ViewChannel', 'Connect']) || permissions.has(voicePermissions)) continue;
+      await channel.permissionOverwrites.edit(role, { Speak: true, UseVAD: true, Stream: true },
+        { reason: 'Naprawa mówienia, kamery i udostępniania ekranu' });
+      affected.push(role);
+      changed++;
+    }
+    if (!affected.length) continue;
+    const updated = await guild.channels.fetch(channel.id, { force: true });
+    if (!affected.every((role) => updated.permissionsFor(role)?.has(voicePermissions))) {
+      throw new SetupError(`Discord nie zapisał pełnych uprawnień głosowych w „${channel.name}”.`);
+    }
+    console.log(`Naprawiono głosowe: ${channel.name} (${channel.id}), role: ${affected.map(({ name }) => name).join(', ')}.`);
+  }
+  console.log(`Sprawdzono komunikację głosową: ${targets.size} kanałów i kategorii, naprawiono ${changed} ustawień ról.`);
 }
