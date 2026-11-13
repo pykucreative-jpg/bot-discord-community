@@ -1,4 +1,4 @@
-import { ChannelType, GuildOnboardingPromptType } from 'discord.js';
+import { ChannelType, GuildExplicitContentFilter, GuildOnboardingPromptType, GuildVerificationLevel } from 'discord.js';
 import { gamePingRoles } from './plan.mjs';
 import { SetupError } from './setup.mjs';
 
@@ -10,7 +10,21 @@ const titles = ['🎮 W co grasz?', '✨ Co Cię interesuje?', '🔔 Chcesz powi
 export async function setupOnboarding(guild, journal) {
   const { state, save } = journal;
   if (!state.securityReady) throw new SetupError('Najpierw ukończ konfigurację serwera.');
-  if (!guild.features.includes('COMMUNITY')) throw new SetupError('Ekran personalizacji wymaga włączonej funkcji Społeczność na serwerze.');
+  if (!guild.features.includes('COMMUNITY')) {
+    const bot = await guild.members.fetchMe();
+    if (!bot.permissions.has('Administrator')) {
+      throw new SetupError('Najpierw właściciel musi włączyć funkcję Społeczność w ustawieniach Discorda. Bot nie ma Administratora wymaganego do tej zmiany.');
+    }
+    const rulesChannel = state.channels.regulamin;
+    const publicUpdatesChannel = state.channels['logi-bota'];
+    if (!rulesChannel || !publicUpdatesChannel) throw new SetupError('Brakuje kanału regulaminu lub prywatnych komunikatów administracji.');
+    await guild.edit({
+      features: [...guild.features, 'COMMUNITY'], rulesChannel, publicUpdatesChannel,
+      verificationLevel: Math.max(guild.verificationLevel, GuildVerificationLevel.Low),
+      explicitContentFilter: GuildExplicitContentFilter.AllMembers,
+      reason: 'Włączenie Społeczności wymaganej do personalizacji nowych członków',
+    });
+  }
   const [channels, roles, current] = await Promise.all([
     guild.channels.fetch(), guild.roles.fetch(), guild.fetchOnboarding(),
   ]);
