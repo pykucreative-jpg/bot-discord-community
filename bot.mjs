@@ -13,6 +13,7 @@ import { createJockiePanel } from './jockie-panel.mjs';
 import { createCommunityPlus } from './community-plus.mjs';
 import { createWebAdmin, webLoginCommand } from './web-admin.mjs';
 import { giveStaffPoint, setupStaffPoints, staffPointCommands } from './staff-points.mjs';
+import { setupOnboarding } from './onboarding.mjs';
 import {
   applyChannels, applySetup, botPermissions, configuredCleanupRole, inspect, installInviteProtection, installProtection, loadState,
   privateModerationChannel, repairVoiceCommunication, restrictChannelMentions, restrictRoleMentions,
@@ -648,6 +649,10 @@ client.once(Events.ClientReady, async (readyClient) => {
   if (communityPlus) await withConfiguration(() => tickets.setup(guild, journal)).catch(logError);
   await tickets.checkApplications(guild).catch((error) => {
     if (error instanceof SetupError) console.warn('Sprawdzenie podań:', error.message);
+    else logError(error);
+  });
+  await withConfiguration(() => setupOnboarding(guild, journal)).catch((error) => {
+    if (error instanceof SetupError) console.warn('Personalizacja Discorda:', error.message);
     else logError(error);
   });
 });
