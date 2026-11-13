@@ -52,7 +52,7 @@ export async function setupOnboarding(guild, journal) {
         roleOption('tech', 'Technologia', '💻')] },
     { title: titles[2], type: GuildOnboardingPromptType.MultipleChoice, singleSelect: true,
       options: [roleOption('events', 'Tak, chcę wiedzieć o wydarzeniach', '📅'),
-        { title: 'Na razie bez powiadomień', roles: [], channels: [], emoji: '🌙' }] },
+        { title: 'Na razie bez powiadomień', roles: [], channels: [state.channels.regulamin], emoji: '🌙' }] },
   ];
   const preserved = current.prompts.filter((prompt) => !titles.includes(prompt.title)).map((prompt) => ({
     id: prompt.id, title: prompt.title, type: prompt.type, singleSelect: prompt.singleSelect,

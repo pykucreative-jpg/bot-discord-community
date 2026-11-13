@@ -112,7 +112,7 @@ const jockie = process.env.DISCORD_JOCKIE_PANEL === 'true' ? createJockiePanel({
 const communityPlus = process.env.DISCORD_COMMUNITY_PLUS === 'true'
   ? createCommunityPlus({ client, guildId, getState: () => journal.state, security, logError }) : undefined;
 client.on(Events.GuildUpdate, (before, after) => {
-  if (after.id !== guildId || before.features.includes('COMMUNITY') || !after.features.includes('COMMUNITY')) return;
+  if (building || after.id !== guildId || before.features.includes('COMMUNITY') || !after.features.includes('COMMUNITY')) return;
   withConfiguration(() => setupOnboarding(after, journal)).catch((error) => {
     if (error instanceof SetupError) console.warn('Personalizacja Discorda:', error.message);
     else logError(error);
